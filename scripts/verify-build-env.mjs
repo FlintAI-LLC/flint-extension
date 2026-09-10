@@ -9,14 +9,21 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envPath = resolve(root, ".env");
+const envExamplePath = resolve(root, ".env.example");
 const distChunk = resolve(root, "dist/chunks");
 
-if (!existsSync(envPath)) {
-  console.error("Missing .env — copy .env.staging or .env.example first.");
+const envFile = existsSync(envPath)
+  ? envPath
+  : existsSync(envExamplePath)
+    ? envExamplePath
+    : null;
+
+if (!envFile) {
+  console.error("Missing .env and .env.example — cannot verify API base URL.");
   process.exit(1);
 }
 
-const env = readFileSync(envPath, "utf8");
+const env = readFileSync(envFile, "utf8");
 const apiMatch = env.match(/^VITE_API_BASE_URL=(.+)$/m);
 const expectedApi = (apiMatch?.[1] ?? "").trim();
 if (!expectedApi) {
