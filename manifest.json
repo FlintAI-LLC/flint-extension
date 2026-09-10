@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Flint Resume",
-  "version": "0.1.0",
-  "description": "Capture job postings and tailor your resume in Flint Resume.",
+  "name": "Flint Apply",
+  "version": "0.1.4",
+  "description": "Capture job postings and tailor your resume in Flint Apply.",
   "permissions": [
     "storage",
     "activeTab",
@@ -14,10 +14,21 @@
   ],
   "host_permissions": [
     "http://localhost:8000/*",
-    "http://localhost:3000/*",
+    "http://localhost:8001/*",
+    "http://localhost:3001/*",
+    "http://localhost:3100/*",
     "https://www.linkedin.com/*",
     "https://linkedin.com/*",
     "https://*.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://*.lever.co/*",
+    "https://jobs.ashbyhq.com/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.icims.com/*",
+    "https://*.ukg.net/*",
+    "https://jobright.ai/*",
+    "https://www.jobright.ai/*",
     "https://*/*"
   ],
   "background": {
@@ -25,7 +36,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Flint Resume",
+    "default_title": "Flint Apply",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -79,15 +90,22 @@
     },
     {
       "matches": [
+        "https://*.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://*.lever.co/*",
+        "https://jobs.ashbyhq.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.icims.com/*",
+        "https://*.ukg.net/*",
+        "https://jobright.ai/*",
+        "https://www.jobright.ai/*",
         "https://www.linkedin.com/jobs/*",
         "https://www.linkedin.com/jobs/*/*",
         "https://www.linkedin.com/jobs/*/*/*",
         "https://linkedin.com/jobs/*",
         "https://linkedin.com/jobs/*/*",
-        "https://linkedin.com/jobs/*/*/*",
-        "https://*.greenhouse.io/*",
-        "https://jobright.ai/jobs/*",
-        "https://www.jobright.ai/jobs/*"
+        "https://linkedin.com/jobs/*/*/*"
       ],
       "js": ["content/floating-shell.js"],
       "run_at": "document_idle"
@@ -100,15 +118,10 @@
         "popup/*",
         "assets/*",
         "chunks/*",
+        "brand/*",
         "icons/icon48.png"
       ],
-      "matches": [
-        "https://www.linkedin.com/*",
-        "https://linkedin.com/*",
-        "https://*.greenhouse.io/*",
-        "https://jobright.ai/*",
-        "https://www.jobright.ai/*"
-      ]
+      "matches": ["<all_urls>"]
     }
   ],
   "browser_specific_settings": {

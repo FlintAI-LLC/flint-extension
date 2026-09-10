@@ -8,7 +8,9 @@ import type {
 import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { getAccessTokenOrNull, login, logout } from "../src/auth.js";
 import { apiSaveJD } from "../src/api.js";
-import { buildTailorInFlintResumeUrl, getGoogleClientId } from "../src/urls.js";
+import { buildTailorInFlintApplyUrl, getGoogleClientId } from "../src/urls.js";
+import { PRODUCT_NAME, FLINT_DESKTOP_NAME, FLINT_DESKTOP_HANDOFF_ENABLED } from "../src/brand.js";
+import { PopupHeader } from "./BrandWordmark.js";
 import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
 import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
@@ -203,11 +205,7 @@ function isRestrictedUrl(url: string | undefined): boolean {
   return RESTRICTED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
 }
 
-// chrome.runtime.getURL resolves correctly inside the extension bundle.
-const ICON_URL = typeof chrome !== "undefined" && chrome.runtime?.getURL
-  ? chrome.runtime.getURL("icons/icon32.png")
-  : "/icons/icon32.png";
-
+// Removed — header uses Flint Apply wordmark via PopupHeader.
 export function Popup(): React.ReactElement {
   const [view, setView] = useState<View>("loading");
   const [email, setEmail] = useState("");
@@ -458,7 +456,8 @@ export function Popup(): React.ReactElement {
       setView("loading");
       await _extractJD();
     } catch (err) {
-      setLoginError(err instanceof Error ? err.message : "Login failed");
+      const raw = err instanceof Error ? err.message : "Login failed";
+      setLoginError(formatApiErrorMessage(raw, raw));
     }
   }
 
@@ -497,17 +496,17 @@ export function Popup(): React.ReactElement {
     }
   }
 
-  function handleTailorInFlintResume(): void {
+  function handleTailorInFlintApply(): void {
     if (!savedJdId || !jd) return;
     void chrome.tabs.create({
-      url: buildTailorInFlintResumeUrl(savedJdId, {
+      url: buildTailorInFlintApplyUrl(savedJdId, {
         reviewRecommended: isUncertainJdSource(jd.url, jd.extraction_method),
       }),
     });
   }
 
   function handlePrepInFlintDesktop(): void {
-    if (!savedExportToken) return;
+    if (!FLINT_DESKTOP_HANDOFF_ENABLED || !savedExportToken) return;
 
     setCopiedImportLink(false);
     // Keep both paths: direct dispatch (user gesture) + handoff tab (Chrome/Firefox/Linux).
@@ -522,7 +521,7 @@ export function Popup(): React.ReactElement {
   }
 
   async function handleCopyImportLink(): Promise<void> {
-    if (!savedExportToken) return;
+    if (!FLINT_DESKTOP_HANDOFF_ENABLED || !savedExportToken) return;
     try {
       await navigator.clipboard.writeText(buildFlintImportDeepLink(savedExportToken));
       setCopiedImportLink(true);
@@ -559,7 +558,7 @@ export function Popup(): React.ReactElement {
           } else if (response?.error === "no_form") {
             setAutofillHint("Open the application form page, then try Autofill again.");
           } else if (response?.error === "Autofill disabled") {
-            setAutofillHint("Autofill is turned off in extension settings.");
+            setAutofillHint("Autofill is turned off for this extension install.");
           }
           resolve();
         },
@@ -608,12 +607,7 @@ export function Popup(): React.ReactElement {
   if (view === "login") {
     return (
       <div className="popup">
-        <header className="popup-header">
-          <div className="popup-brand">
-            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
-            <span className="logo">Flint Resume</span>
-          </div>
-        </header>
+        <PopupHeader />
         {GOOGLE_ENABLED && (
           <>
             <button
@@ -665,18 +659,14 @@ export function Popup(): React.ReactElement {
   if (view === "not_on_job") {
     return (
       <div className="popup">
-        <header className="popup-header">
-          <div className="popup-brand">
-            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
-            <span className="logo">Flint Resume</span>
-          </div>
+        <PopupHeader>
           <button className="btn-ghost" onClick={() => void handleLogout()}>
             Log out
           </button>
-        </header>
+        </PopupHeader>
         <p className="hint">
           {notOnJobMessage ??
-            "Could not detect a job on this page. Open a LinkedIn, Greenhouse, or Jobright listing — or paste the job description manually."}
+            "Could not detect a job on this page. Open a LinkedIn, Greenhouse, Jobright, or UKG listing — or paste the job description manually."}
         </p>
         <button className="btn-secondary" onClick={handleOpenManualEntry}>
           Paste job description
@@ -688,15 +678,11 @@ export function Popup(): React.ReactElement {
   if (view === "manual_entry") {
     return (
       <div className="popup">
-        <header className="popup-header">
-          <div className="popup-brand">
-            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
-            <span className="logo">Flint Resume</span>
-          </div>
+        <PopupHeader>
           <button className="btn-ghost" onClick={() => setView("not_on_job")}>
             Back
           </button>
-        </header>
+        </PopupHeader>
         <div className="manual-form">
           <label>
             Job title (optional)
@@ -744,15 +730,11 @@ export function Popup(): React.ReactElement {
   if (view === "job_ready" && jd) {
     return (
       <div className="popup">
-        <header className="popup-header">
-          <div className="popup-brand">
-            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
-            <span className="logo">Flint Resume</span>
-          </div>
+        <PopupHeader>
           <button className="btn-ghost" onClick={() => void handleLogout()}>
             Log out
           </button>
-        </header>
+        </PopupHeader>
         <div className="jd-preview">
           <p className="jd-title">{jd.title || "Untitled Role"}</p>
           {jd.company && <p className="jd-company">{jd.company}</p>}
@@ -777,18 +759,13 @@ export function Popup(): React.ReactElement {
   if (view === "saved" && jd) {
     return (
       <div className="popup">
-        <header className="popup-header">
-          <div className="popup-brand">
-            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
-            <span className="logo">Flint Resume</span>
-          </div>
-        </header>
+        <PopupHeader />
         <div className="jd-preview">
           <p className="jd-title">{jd.title || "Untitled Role"}</p>
           {jd.company && <p className="jd-company">{jd.company}</p>}
         </div>
-        <button className="btn-primary" onClick={handleTailorInFlintResume}>
-          Tailor in Flint Resume
+        <button className="btn-primary" onClick={handleTailorInFlintApply}>
+          Tailor in {PRODUCT_NAME}
         </button>
         {renderAutofillButton()}
         {autofillHint && <p className="hint hint-compact">{autofillHint}</p>}
@@ -796,28 +773,41 @@ export function Popup(): React.ReactElement {
           type="button"
           className="btn-secondary"
           onClick={handlePrepInFlintDesktop}
+          disabled={!FLINT_DESKTOP_HANDOFF_ENABLED}
+          title={
+            FLINT_DESKTOP_HANDOFF_ENABLED
+              ? undefined
+              : `${FLINT_DESKTOP_NAME} interview prep desktop app — coming soon`
+          }
         >
-          Prep in Flint (desktop)
+          Prep in {FLINT_DESKTOP_NAME} (desktop)
         </button>
         <button
           type="button"
           className="btn-ghost"
           onClick={() => void handleCopyImportLink()}
+          disabled={!FLINT_DESKTOP_HANDOFF_ENABLED}
+          title={
+            FLINT_DESKTOP_HANDOFF_ENABLED
+              ? undefined
+              : "Available when the desktop interview app launches"
+          }
         >
           {copiedImportLink ? "Import link copied" : "Copy import link"}
         </button>
         <p className="hint hint-compact">
-          Tailor your resume on the web first. Use desktop for interview prep only.
-          On Linux dev builds, run <code>npm run deeplink:register</code> in Flint once.
+          {FLINT_DESKTOP_HANDOFF_ENABLED
+            ? `Tailor your resume on the web first. Use desktop for interview prep only. On Linux dev builds, run npm run deeplink:register in ${FLINT_DESKTOP_NAME} once.`
+            : `Tailor your resume on the web first. ${FLINT_DESKTOP_NAME} interview prep (desktop) is coming soon.`}
         </p>
-        {flintFallback && (
+        {FLINT_DESKTOP_HANDOFF_ENABLED && flintFallback && (
           <p className="fallback-hint">
-            Flint did not open. Register the handler (
+            {FLINT_DESKTOP_NAME} did not open. Register the handler (
             <code>cd Flint && npm run deeplink:register</code>
-            ), ensure Flint or <code>npm run tauri dev</code> is running, or paste the
-            copied import link into Flint Session Design.{" "}
+            ), ensure {FLINT_DESKTOP_NAME} or <code>npm run tauri dev</code> is running, or paste the
+            copied import link into {FLINT_DESKTOP_NAME} Session Design.{" "}
             <a href={FLINT_DOWNLOAD_URL} target="_blank" rel="noreferrer">
-              Flint on GitHub
+              {FLINT_DESKTOP_NAME} on GitHub
             </a>
           </p>
         )}
@@ -828,12 +818,7 @@ export function Popup(): React.ReactElement {
   if (view === "error") {
     return (
       <div className="popup">
-        <header className="popup-header">
-          <div className="popup-brand">
-            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
-            <span className="logo">Flint Resume</span>
-          </div>
-        </header>
+        <PopupHeader />
         <p className="error-text">{errorMessage ?? "Something went wrong."}</p>
         <button className="btn-ghost" onClick={() => setView("job_ready")}>
           Try again

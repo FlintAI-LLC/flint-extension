@@ -1,7 +1,9 @@
 import type { ExtractedJD, FetchPageHtmlResult, PopupMessage } from "../src/types.js";
 import {
+  extractUkgOpportunityFromHtml,
   finalizeJdText,
   isMetadataHeavy,
+  isUkgRecruitingHost,
 } from "../src/jdParse.js";
 import { resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import selectorsConfig from "./jd-selectors.json";
@@ -41,7 +43,10 @@ function queryFirst(selectors: string[]): string {
   for (const sel of selectors) {
     try {
       const el = document.querySelector(sel);
-      if (el) return (el.textContent ?? "").trim();
+      if (!el) continue;
+      const text = (el.textContent ?? "").trim();
+      if (text) return text;
+      if (el instanceof HTMLImageElement && el.alt.trim()) return el.alt.trim();
     } catch {
       // Ignore invalid selectors.
     }
@@ -276,12 +281,31 @@ function isKnownSpaHost(): boolean {
   return (
     host.includes("linkedin.com") ||
     host.includes("myworkdayjobs.com") ||
-    host.includes("greenhouse.io")
+    host.includes("greenhouse.io") ||
+    isUkgRecruitingHost(host)
   );
+}
+
+function extractFromUkgEmbeddedScript(): { title: string; company: string; text: string } | null {
+  if (!document.documentElement.outerHTML.includes("CandidateOpportunityDetail")) return null;
+  return extractUkgOpportunityFromHtml(document.documentElement.outerHTML);
 }
 
 async function _extractJDInner(): Promise<ExtractedJD> {
   const config: SelectorsConfig = selectorsConfig;
+
+  if (isUkgRecruitingHost(window.location.href)) {
+    const embedded = extractFromUkgEmbeddedScript();
+    if (embedded && embedded.text.length >= HEURISTIC_MIN_LENGTH) {
+      return {
+        title: embedded.title || document.title,
+        company: embedded.company,
+        text: embedded.text,
+        url: window.location.href,
+        extraction_method: "structured",
+      };
+    }
+  }
 
   // --- Layer 1 (SPA-aware): known-site DOM selectors run first for SPAs ---
   // For SPA-based ATSes the DOM is already rendered; going to DOM selectors

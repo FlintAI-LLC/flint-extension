@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { waitForOAuthCodeInTab } from "../../src/oauthTab.js";
+import { buildExtensionOAuthRedirectUri } from "../../src/urls.js";
 
-const REDIRECT_URI = "http://localhost:3000/auth/extension/google/callback";
+const REDIRECT_URI = buildExtensionOAuthRedirectUri();
 
 type TabListener = (
   tabId: number,

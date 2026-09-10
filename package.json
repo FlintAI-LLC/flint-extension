@@ -1,12 +1,12 @@
 {
   "name": "flint-extension",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build && vite build --config vite.content.config.ts && vite build --config vite.autofill-content.config.ts && vite build --config vite.floating-content.config.ts",
+    "build": "vite build && vite build --config vite.content.config.ts && vite build --config vite.autofill-content.config.ts && vite build --config vite.floating-content.config.ts && node scripts/verify-build-env.mjs",
     "build:autofill-test": "vite build --config vite.autofill-test.config.ts",
-    "dev": "vite build --watch & vite build --config vite.content.config.ts --watch & vite build --config vite.floating-content.config.ts --watch",
+    "dev": "vite build --watch & vite build --config vite.content.config.ts --watch & vite build --config vite.autofill-content.config.ts --watch & vite build --config vite.floating-content.config.ts --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts,.tsx",

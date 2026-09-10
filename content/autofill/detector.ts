@@ -3,7 +3,13 @@ import selectorsConfig from "./selectors.json";
 /** Minimum confidence before the overlay should offer autofill. */
 export const APPLICATION_FORM_CONFIDENCE_THRESHOLD = 0.55;
 
-export type Platform = "greenhouse" | "linkedin" | "unknown";
+export type Platform =
+  | "greenhouse"
+  | "linkedin"
+  | "lever"
+  | "ashby"
+  | "workday"
+  | "unknown";
 
 export type FieldConcept =
   | "name"

@@ -378,7 +378,121 @@ function parseJsonLdJobPosting(rawJson: string): ParsedJD | null {
   return null;
 }
 
+const UKG_OPPORTUNITY_MARKER = "new US.Opportunity.CandidateOpportunityDetail(";
+
+/** UKG Pro Recruiting job boards (*.ukg.net, recruiting.ultipro.com). */
+export function isUkgRecruitingHost(urlOrHost: string): boolean {
+  try {
+    const host = urlOrHost.includes("://")
+      ? new URL(urlOrHost).hostname.toLowerCase()
+      : urlOrHost.toLowerCase();
+    return (
+      host.endsWith(".ukg.net") ||
+      host === "ukg.net" ||
+      host.endsWith(".ultipro.com") ||
+      host === "recruiting.ultipro.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function extractBalancedJsonObject(source: string, openBraceIndex: number): string | null {
+  if (openBraceIndex < 0 || source[openBraceIndex] !== "{") return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = openBraceIndex; i < source.length; i++) {
+    const ch = source[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return source.slice(openBraceIndex, i + 1);
+    }
+  }
+
+  return null;
+}
+
+function parseUkgOpportunityPayload(payload: string): ParsedJD | null {
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(payload) as Record<string, unknown>;
+  } catch {
+    try {
+      const cleaned = payload.replace(/,\s*([}\]])/g, "$1");
+      data = JSON.parse(cleaned) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  const description = finalizeJdText(stripHtml(String(data.Description ?? "")));
+  if (description.length < JD_MIN_LENGTH) return null;
+
+  return {
+    title: normalizeJobTitle(String(data.Title ?? "")),
+    company: "",
+    text: description,
+  };
+}
+
+function extractUkgCompanyFromHtml(html: string): string {
+  const logoAlt = html.match(
+    /data-automation=["']navbar-(?:small|large)-logo["'][^>]*alt=["']([^"']+)["']/i,
+  );
+  if (logoAlt?.[1]) return sanitizeText(logoAlt[1]);
+
+  const altFirst = html.match(
+    /alt=["']([^"']+)["'][^>]*data-automation=["']navbar-(?:small|large)-logo["']/i,
+  );
+  if (altFirst?.[1]) return sanitizeText(altFirst[1]);
+
+  return "";
+}
+
+/** UKG embeds the posting inside `new US.Opportunity.CandidateOpportunityDetail({...})`. */
+export function extractUkgOpportunityFromHtml(html: string): ParsedJD | null {
+  const markerIndex = html.indexOf(UKG_OPPORTUNITY_MARKER);
+  if (markerIndex < 0) return null;
+
+  const openBraceIndex = html.indexOf("{", markerIndex + UKG_OPPORTUNITY_MARKER.length);
+  const payload = extractBalancedJsonObject(html, openBraceIndex);
+  if (!payload) return null;
+
+  const parsed = parseUkgOpportunityPayload(payload);
+  if (!parsed) return null;
+
+  parsed.company = extractUkgCompanyFromHtml(html);
+  return parsed;
+}
+
 export function extractJobPostingFromHtml(html: string): ParsedJD | null {
+  if (isUkgRecruitingHost(html) || html.includes(UKG_OPPORTUNITY_MARKER)) {
+    const ukgParsed = extractUkgOpportunityFromHtml(html);
+    if (ukgParsed) return ukgParsed;
+  }
+
   let parsed: ParsedJD | null = null;
 
   if (typeof DOMParser !== "undefined") {

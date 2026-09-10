@@ -27,7 +27,7 @@ export interface AutofillFieldPayload {
 
 export interface AutofillPayload {
   jd_id: string;
-  platform: "greenhouse" | "linkedin" | "unknown";
+  platform: "greenhouse" | "linkedin" | "lever" | "ashby" | "workday" | "unknown";
   fields: AutofillFieldPayload[];
 }
 

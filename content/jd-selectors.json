@@ -142,6 +142,23 @@
       "[class*='jobContentBrief']"
     ]
   },
+  "ukg": {
+    "matches": ["ukg.net", "ultipro.com", "OpportunityDetail"],
+    "title": [
+      "[data-automation='opportunity-title']",
+      "span[data-automation='opportunity-title']"
+    ],
+    "company": [
+      "[data-automation='navbar-small-logo']",
+      "[data-automation='navbar-large-logo']",
+      ".navbar-brand img[alt]"
+    ],
+    "description": [
+      "[data-automation='job-description']",
+      "#opportunityDetailView .opportunity",
+      ".opportunity-render-view"
+    ]
+  },
   "icims_careers": {
     "matches": [
       "kaiserpermanentejobs.org",

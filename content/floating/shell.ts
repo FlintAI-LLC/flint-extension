@@ -6,6 +6,7 @@
  * through an extension-origin iframe, so all auth/draft state continues to
  * live in chrome.storage exactly as it does for the toolbar popup today.
  */
+import { PRODUCT_NAME, wordmarkUrl } from "../../src/brand.js";
 import { getPanelExpanded, setPanelExpanded } from "./panelState.js";
 
 const HOST_ATTRIBUTE = "data-flint-floating-shell";
@@ -70,10 +71,11 @@ const SHELL_STYLES = `
     display: none;
   }
   .drawer-header {
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
+    justify-content: center;
+    padding: 16px 44px 16px 16px;
     border-bottom: 1px solid #e2e8f0;
     background: #f8fafc;
     flex-shrink: 0;
@@ -81,16 +83,21 @@ const SHELL_STYLES = `
   .drawer-title {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    color: #0f172a;
+    justify-content: center;
+    width: 100%;
   }
-  .drawer-title img {
-    width: 20px;
-    height: 20px;
+  .drawer-wordmark {
+    height: 48px;
+    width: auto;
+    max-width: calc(100% - 8px);
+    object-fit: contain;
+    display: block;
   }
   .drawer-close {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
     border: none;
     background: transparent;
     color: #64748b;
@@ -256,10 +263,10 @@ export class FloatingShell {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "fab";
-    button.setAttribute("aria-label", "Open Flint");
+    button.setAttribute("aria-label", `Open ${PRODUCT_NAME}`);
     const icon = document.createElement("img");
     icon.src = chrome.runtime.getURL("icons/icon48.png");
-    icon.alt = "Flint";
+    icon.alt = PRODUCT_NAME;
     button.appendChild(icon);
     button.addEventListener("click", () => this.expand());
     return button;
@@ -275,17 +282,16 @@ export class FloatingShell {
 
     const title = document.createElement("div");
     title.className = "drawer-title";
-    const titleIcon = document.createElement("img");
-    titleIcon.src = chrome.runtime.getURL("icons/icon48.png");
-    titleIcon.alt = "";
-    const titleText = document.createElement("span");
-    titleText.textContent = "Flint";
-    title.append(titleIcon, titleText);
+    const wordmark = document.createElement("img");
+    wordmark.className = "drawer-wordmark";
+    wordmark.src = wordmarkUrl();
+    wordmark.alt = "";
+    title.append(wordmark);
 
     const closeButton = document.createElement("button");
     closeButton.type = "button";
     closeButton.className = "drawer-close";
-    closeButton.setAttribute("aria-label", "Close Flint panel");
+    closeButton.setAttribute("aria-label", `Close ${PRODUCT_NAME} panel`);
     closeButton.textContent = "\u00d7";
     closeButton.addEventListener("click", () => this.collapse());
 
@@ -294,7 +300,7 @@ export class FloatingShell {
     this.frameEl = document.createElement("iframe");
     this.frameEl.className = "drawer-frame";
     this.frameEl.src = chrome.runtime.getURL("popup/index.html");
-    this.frameEl.title = "Flint Resume";
+    this.frameEl.title = PRODUCT_NAME;
 
     drawer.append(header, this.frameEl);
     return drawer;

@@ -6,14 +6,14 @@ export function getApiBaseUrl(): string {
 }
 
 export function getWebAppBaseUrl(): string {
-  return import.meta.env.VITE_WEB_APP_BASE_URL ?? "http://localhost:3000";
+  return import.meta.env.VITE_WEB_APP_BASE_URL ?? "http://localhost:3100";
 }
 
 export function getGoogleClientId(): string {
   return import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 }
 
-export function buildTailorInFlintResumeUrl(
+export function buildTailorInFlintApplyUrl(
   jdId: string,
   options?: { reviewRecommended?: boolean },
 ): string {

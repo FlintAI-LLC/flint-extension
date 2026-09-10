@@ -27,6 +27,20 @@ html.flint-in-drawer .popup {
   max-width: 360px;
 }
 
+/* Drawer shell owns the wordmark — hide duplicate in iframe popup. */
+html.flint-in-drawer .popup-header .brand-wordmark {
+  display: none;
+}
+
+html.flint-in-drawer .popup-header {
+  justify-content: flex-end;
+  min-height: 0;
+}
+
+html.flint-in-drawer .popup-header:not(:has(.btn-ghost)) {
+  display: none;
+}
+
 .popup-header {
   display: flex;
   justify-content: space-between;
@@ -36,7 +50,14 @@ html.flint-in-drawer .popup {
 .popup-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+}
+
+.brand-wordmark {
+  height: 24px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  display: block;
 }
 
 .popup-icon {
@@ -48,6 +69,7 @@ html.flint-in-drawer .popup {
   font-size: 16px;
   font-weight: 700;
   color: #4f46e5;
+  letter-spacing: -0.02em;
 }
 
 .login-form {
@@ -144,6 +166,21 @@ html.flint-in-drawer .popup {
 .btn-secondary:hover {
   background: #eef2ff;
   border-color: #4f46e5;
+}
+
+.btn-secondary:disabled,
+.btn-ghost:disabled {
+  opacity: 0.55;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.btn-secondary:disabled:hover,
+.btn-ghost:disabled:hover {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
 }
 
 .hint-compact {

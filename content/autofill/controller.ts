@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "../../src/brand.js";
 import { observeApplicationSteps } from "./continuation.js";
 import { detectApplicationForm, observeApplicationForm } from "./detector.js";
 import type { FieldCandidate } from "./detector.js";
@@ -65,6 +66,21 @@ function requestAutofillPayload(jdId: string): Promise<AutofillPayloadResponse> 
   });
 }
 
+export function autofillFailureMessage(response: AutofillPayloadResponse): string {
+  if (response.code === "not_authenticated") {
+    return `Sign in to the ${PRODUCT_NAME} extension, then try Autofill again.`;
+  }
+  if (response.code === "not_found") {
+    return "Saved job not found. Save the job in the extension again.";
+  }
+  if (response.code === "network") {
+    return `Could not reach ${PRODUCT_NAME}. Check your connection and try again.`;
+  }
+  return (
+    "Autofill is unavailable right now. Tailor your resume in Flint Apply first, then try again."
+  );
+}
+
 export function startAutofillController(): void {
   if (typeof chrome === "undefined" || !chrome.runtime?.id) return;
 
@@ -103,11 +119,12 @@ export function startAutofillController(): void {
     if (response.code === "not_tailored") {
       overlay.showMessage(
         "Resume not tailored yet",
-        "Open this job in Flint Resume, tailor your resume, then return to the application form.",
+        `Open this job in ${PRODUCT_NAME}, tailor your resume, then return to the application form.`,
       );
       return;
     }
     if (!response.payload) {
+      overlay.showMessage("Autofill unavailable", autofillFailureMessage(response));
       return;
     }
 
