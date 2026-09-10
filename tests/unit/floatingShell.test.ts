@@ -69,9 +69,9 @@ describe("FloatingShell", () => {
     const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
     const shadow = host.shadowRoot!;
     const drawer = shadow.querySelector(".drawer") as HTMLElement;
-    const titleText = shadow.querySelector(".drawer-title span") as HTMLElement;
+    const title = shadow.querySelector(".drawer-title") as HTMLElement;
 
-    titleText.click();
+    title.click();
     expect(shell.isExpanded()).toBe(true);
     expect(drawer.hidden).toBe(false);
 

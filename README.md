@@ -1,49 +1,45 @@
-# Flint Browser Extension
+# Flint Apply Browser Extension
 
 Chrome MV3 extension (Firefox-compatible) that captures job descriptions from
-LinkedIn and Greenhouse and opens them in Flint desktop with one click.
+job boards and opens them in **Flint Apply** for resume tailoring.
 
-## Phase 2 scope
+## Scope
 
-- Email/password login against Smart Resume API
-- JD extraction from LinkedIn and Greenhouse job pages
-- Save job to Flint Resume (`POST /api/job-descriptions`)
-- **Tailor in Flint Resume** — opens web wizard with JD pre-filled
-- **Prep in Flint (desktop)** — optional shortcut with JD-only handoff (`flint://import?token=`)
-- On **Linux dev**, register the handler once: `cd ../Flint && npm run deeplink:register`
-- Keep **Flint running** (`npm run tauri dev`) or have a debug build installed
-
-Not in Phase 2: autofill, Supabase SSO, bidirectional IPC.
+- Email/password and Google login against the Flint Apply API
+- JD extraction from LinkedIn, Greenhouse, Jobright, Lever, and similar hosts
+- Save job to Flint Apply (`POST /api/job-descriptions`)
+- **Tailor in Flint Apply** — opens the web wizard with JD pre-filled
+- **Autofill (beta)** — fill supported application forms from a tailored resume
+- **Prep in Flint (desktop)** — interview prep handoff (disabled until desktop app ships)
 
 ## Floating panel
 
 On LinkedIn, Greenhouse, and Jobright job pages the extension injects a
-Jobright-style floating logo (bottom-right FAB). Click it to open a ~360px
-in-page drawer that hosts the same popup UI as an extension-origin iframe;
-click outside the drawer or press Escape to collapse it back to the logo.
-Auth/draft state lives in `chrome.storage` as before, so collapsing and
-reopening the drawer resumes exactly where you left off.
+floating logo (bottom-right FAB). Click it to open a ~360px in-page drawer
+with the same popup UI in an extension-origin iframe.
 
-On Chrome, clicking the toolbar icon (`chrome.action.onClicked`) expands the
-floating panel on the active tab instead of opening a popup window, injecting
-the content script on demand via `activeTab` if the page didn't already match
-the declared content script hosts. Firefox keeps the classic popup
-(`default_popup`, restored by `scripts/patch-firefox-manifest.mjs`) since it
-does not go through this floating-panel flow.
+On Chrome, the toolbar icon expands the floating panel on the active tab.
+Firefox keeps the classic popup (`default_popup`).
 
 ## Requirements
 
 - Node.js >= 18
-- Flint desktop installed and `flint://` scheme registered
-- Smart Resume API running at `http://localhost:8000` (or configure via `.env`)
+- Flint Apply API at `http://localhost:8000` (dev) or `http://localhost:8001` (staging sim)
+- Flint Apply web app at `http://localhost:3100` (dev) or `http://localhost:3001` (staging)
 
 ## Setup
 
 ```bash
-cp .env.example .env
+cp .env.example .env          # dev (:3100 / :8000)
+# or
+cp .env.staging .env          # local staging sim (:3001 / :8001)
+
 npm install
 npm run build
 ```
+
+From `smart-resume`, run `./scripts/sync-extension-staging-env.sh` to write
+`../flint-extension/.env` from `backend/.env.staging`.
 
 Load `dist/` as an unpacked extension in `chrome://extensions/` (Developer mode on).
 
@@ -63,38 +59,42 @@ npm run lint:ext   # web-ext lint against dist/
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Smart Resume API base URL |
-| `VITE_WEB_APP_BASE_URL` | `http://localhost:3000` | Flint Resume web app (tailoring wizard) |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Flint Apply API base URL |
+| `VITE_WEB_APP_BASE_URL` | `http://localhost:3100` | Flint Apply web app (tailoring wizard) |
 | `VITE_GOOGLE_CLIENT_ID` | — | Same Google OAuth client ID as the backend |
 
 ### Google SSO (extension)
 
-Use the **same** Google OAuth client as the web app. Add this **second** authorized redirect URI in [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+Use the **same** Google OAuth client as the web app. Add authorized redirect URIs in [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
 
 ```
-http://localhost:3000/auth/extension/google/callback
+http://localhost:3100/auth/extension/google/callback   # pnpm dev
+http://localhost:3001/auth/extension/google/callback   # local staging sim
 ```
 
-The web app already uses `http://localhost:3000/api/auth/callback/google`. Do not point the extension at the NextAuth callback — it conflicts with web sign-in.
+The web app uses `/api/auth/callback/google` on the same host. Do not point the extension at the NextAuth callback.
 
 ## Security notes
 
 - Tokens are stored in `chrome.storage.local` (not `sessionStorage` or cookies).
-- Token value is never written to `console.*` or any log.
+- Token values are never written to `console.*` or any log.
 - JD text is sent only via `Bearer` header to the API, never embedded in URLs.
-- The `flint://` URL carries only an opaque single-use token (UUID), not payload content.
+- Desktop `flint://` handoff is disabled until the interview app ships.
+- `web_accessible_resources` matches the floating-panel / autofill runner hosts (LinkedIn, Greenhouse, Lever, Ashby, Workday, iCIMS, UKG, Jobright) so the drawer iframe can load on those pages without exposing popup/chunks to every origin.
 - No `eval`, no `innerHTML` assignment anywhere in the extension.
 
 ## Permissions justification
 
 | Permission | Reason |
 |---|---|
-| `storage` | Persist auth tokens across SW restarts |
+| `storage` | Persist auth tokens across service worker restarts |
 | `activeTab` | Read current tab URL and inject content script on demand |
-| `scripting` | Inject content script when popup opens on a job page |
+| `scripting` | Inject content scripts when the popup opens on a job page |
 | `alarms` | Schedule token refresh every 25 minutes |
+| `identity` | Google sign-in via Chrome identity API |
+| `tabs` / `webNavigation` | OAuth sign-in tab flow |
 
-## Architecture (Phase 2 IPC)
+## Architecture
 
 See [ADR-002](docs/adr/002-extension-desktop-ipc.md) — `flint://` deep link
-selected over native messaging; native messaging deferred to Phase 4+.
+selected over native messaging; native messaging deferred to a later phase.

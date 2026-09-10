@@ -2,6 +2,7 @@ node_modules/
 dist/
 .cursor/
 .env
+.env.staging
 *.local
 coverage/
 tests/e2e/generated/

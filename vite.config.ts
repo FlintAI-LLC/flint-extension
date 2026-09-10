@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
           { src: "content/jd-selectors.json", dest: "content" },
           { src: "content/autofill/selectors.json", dest: "content/autofill" },
           { src: "icons/*", dest: "icons" },
+          { src: "brand/*", dest: "brand" },
           { src: "handoff/index.html", dest: "handoff" },
           { src: "popup/popup.css", dest: "popup" },
         ],
@@ -54,7 +55,7 @@ export default defineConfig(({ mode }) => {
         env.VITE_API_BASE_URL ?? "http://localhost:8000",
       ),
       "import.meta.env.VITE_WEB_APP_BASE_URL": JSON.stringify(
-        env.VITE_WEB_APP_BASE_URL ?? "http://localhost:3000",
+        env.VITE_WEB_APP_BASE_URL ?? "http://localhost:3100",
       ),
       "import.meta.env.VITE_GOOGLE_CLIENT_ID": JSON.stringify(
         env.VITE_GOOGLE_CLIENT_ID ?? "",

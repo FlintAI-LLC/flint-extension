@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   cleanJdText,
   extractJobPostingFromHtml,
+  extractUkgOpportunityFromHtml,
   finalizeJdText,
   isJobAggregatorNoise,
+  isUkgRecruitingHost,
   pickBetterJd,
   scoreJdText,
   stripJobAggregatorNoise,
@@ -199,5 +201,50 @@ describe("stripJobAggregatorNoise", () => {
     expect(cleaned).not.toMatch(/Hidden Jobs/i);
     expect(cleaned).not.toMatch(/ASK ORION/i);
     expect(cleaned.length).toBeLessThan(noisy.length);
+  });
+});
+
+describe("UKG opportunity parsing", () => {
+  const longDescription =
+    "<p><strong>Senior Director</strong></p><ul>" +
+    "<li>Define enterprise test architecture standards and automation frameworks.</li>" +
+    "<li>Enable SDETs and engineers to contribute automation through modern workflows.</li>" +
+    "<li>Establish data-driven quality signals and partner with operational teams.</li>" +
+    "<li>Develop standards for AI-generated code and automated test assets.</li>" +
+    "<li>Ensure production issues directly influence automation investment and test design.</li>" +
+    "</ul>";
+
+  const ukgHtml = `
+    <html><body>
+      <img data-automation="navbar-small-logo" alt="One Inc" />
+      <script>
+        var opportunity = new US.Opportunity.CandidateOpportunityDetail({
+          "Title":"Senior Director, Engineering Quality & Customer Experience",
+          "Description":${JSON.stringify(longDescription)}
+        });
+      </script>
+    </body></html>`;
+
+  it("detects UKG recruiting hosts", () => {
+    expect(
+      isUkgRecruitingHost(
+        "https://oneinc.rec.pro.ukg.net/ONE1500ONEI/JobBoard/cab513e3-84a7-4143-9bd8-dcb9e005acfe/OpportunityDetail?opportunityId=abc",
+      ),
+    ).toBe(true);
+    expect(isUkgRecruitingHost("https://boards.greenhouse.io/acme/jobs/123")).toBe(false);
+  });
+
+  it("extracts title, company, and description from embedded CandidateOpportunityDetail", () => {
+    const parsed = extractUkgOpportunityFromHtml(ukgHtml);
+    expect(parsed?.title).toBe("Senior Director, Engineering Quality & Customer Experience");
+    expect(parsed?.company).toBe("One Inc");
+    expect(parsed?.text.length).toBeGreaterThanOrEqual(200);
+    expect(parsed?.text).toMatch(/enterprise test architecture standards/i);
+  });
+
+  it("extractJobPostingFromHtml prefers UKG embedded payload", () => {
+    const parsed = extractJobPostingFromHtml(ukgHtml);
+    expect(parsed?.title).toContain("Senior Director");
+    expect(parsed?.company).toBe("One Inc");
   });
 });

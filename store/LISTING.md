@@ -1,19 +1,17 @@
 # Chrome Web Store Listing Template
 
-> This file is a template only. Do not submit to the Chrome Web Store until
-> Phase 2 manual review gate passes (login + Save JD + Open in Flint work
-> end-to-end, web-ext lint clean, Playwright smoke green).
+> Template for Flint Apply extension submission. Do not submit until manual
+> review gate passes (login + save JD + tailor in Flint Apply + autofill smoke).
 
 ---
 
 ## Name
 
-Flint — AI Interview Copilot
+Flint Apply — Resume Tailoring
 
 ## Short description (132 chars max)
 
-Capture job descriptions from LinkedIn and Greenhouse and send them to Flint
-for AI-powered interview preparation.
+Capture job descriptions from LinkedIn, Greenhouse, and more. Tailor your resume in Flint Apply in one click.
 
 ## Category
 
@@ -25,30 +23,30 @@ English (United States)
 
 ## Detailed description
 
-Flint is a real-time AI co-pilot for job interviews. This extension connects
-your browser to the Flint desktop application so you can capture job
-descriptions in one click and start a session pre-filled with the role details.
+Flint Apply helps you tailor your resume to every job posting. This extension
+captures the full job description from supported job boards and sends it to your
+Flint Apply account so you can run the tailoring wizard without copy-paste.
 
 **How it works**
-1. Browse to any LinkedIn or Greenhouse job posting.
-2. Click the Flint extension icon.
-3. Click "Save JD" to save the job description to your Smart Resume account.
-4. Click "Open in Flint" to launch Flint desktop pre-filled with the role.
+1. Browse to a job posting on LinkedIn, Greenhouse, Lever, Ashby, or similar.
+2. Open the Flint Apply extension (floating panel or toolbar).
+3. Click **Save job** to store the job description in your account.
+4. Click **Tailor in Flint Apply** to open the web app with the JD pre-filled.
+5. After tailoring, use **Autofill (beta)** on supported application forms.
 
 **Requirements**
-- A Smart Resume account (free tier available at smartresume.app)
-- Flint desktop installed
+- A Flint Apply account
+- Flint Apply web app (flintapply.com or your team's deployment)
 
 **Privacy**
-- We never capture audio, video, or screen content from your browser.
-- Job description text is sent only to Smart Resume's servers (your own account).
-- No analytics or third-party trackers are included.
-- See our full privacy policy at: https://flint.app/privacy
+- Job description text is sent only to Flint Apply servers for your account.
+- We do not capture audio, video, or screen content from your browser.
+- See the Flint Apply privacy policy on the web app.
 
 ## Screenshots
 
 > Add 1280×800 or 640×400 screenshots before submission.
-> Required: login view, job page with "Save JD" button, "Open in Flint" confirmation.
+> Suggested: login, saved job with Tailor button, JD step in web wizard, autofill overlay.
 
 ## Permissions justification
 
@@ -56,31 +54,25 @@ descriptions in one click and start a session pre-filled with the role details.
 |---|---|
 | `storage` | Store authentication tokens locally so users stay logged in |
 | `activeTab` | Read the URL and page content of the active job page |
-| `scripting` | Inject the JD extraction script on demand when the popup opens |
-| `alarms` | Refresh authentication tokens every 25 minutes in the background |
+| `scripting` | Inject JD extraction and autofill scripts on demand |
+| `alarms` | Refresh authentication tokens in the background |
+| `identity` | Google sign-in via Chrome identity API |
+| `tabs` / `webNavigation` | OAuth sign-in tab flow |
 
 ## Host permissions justification
 
 | Host | Justification |
 |---|---|
-| `http://localhost:8000/*` | Development: Smart Resume API on localhost |
-| `https://www.linkedin.com/jobs/*` | Extract job descriptions from LinkedIn |
-| `https://*.greenhouse.io/*` | Extract job descriptions from Greenhouse ATS |
+| `http://localhost:8000/*`, `http://localhost:8001/*` | Development / staging API |
+| `http://localhost:3100/*`, `http://localhost:3001/*` | Development / staging web app |
+| `https://www.linkedin.com/jobs/*` | Extract job descriptions |
+| `https://*.greenhouse.io/*` | Extract job descriptions and autofill forms |
+| Additional ATS hosts | Autofill on Lever, Ashby, Workday, and similar |
 
-## Known limitations (Phase 2)
+## Known limitations
 
-- **TOTP not supported on extension login.** Users with two-factor
-  authentication enabled on Smart Resume cannot sign in through the
-  extension popup; the cookie-based 2FA challenge flow is web-only.
-  Workaround: sign in on the Smart Resume website to manage the account,
-  then disable TOTP temporarily to use the extension, or wait for Phase 3
-  (Supabase SSO) which will replace this flow.
-- **"Open in Flint" install detection is heuristic.** The popup waits
-  three seconds after launching `flint://` and shows a download link if
-  the OS has not switched focus. This produces a false negative when the
-  user clicks the browser address bar or another window during that
-  window — the download prompt is suppressed even though Flint did not
-  open. Re-clicking "Open in Flint" recovers.
-- **Restricted pages.** The extension cannot capture from `chrome://`,
-  `about:`, the Chrome Web Store, or other extension pages; the popup
-  surfaces a "Cannot access this page" hint in those cases.
+- **TOTP not supported on extension login.** Users with two-factor authentication
+  must sign in on the Flint Apply website or temporarily disable 2FA for extension login.
+- **Desktop interview prep** (`Prep in Flint`) is disabled until the separate
+  Flint desktop app is publicly available.
+- **Autofill is beta** and best-effort on LinkedIn Easy Apply and some ATS variants.

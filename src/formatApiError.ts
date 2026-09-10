@@ -1,3 +1,5 @@
+import { buildExtensionOAuthRedirectUri } from "./urls.js";
+
 /** Turn extension API error bodies into short user-facing messages. */
 export function formatApiErrorMessage(body: string, fallback: string): string {
   try {
@@ -6,10 +8,17 @@ export function formatApiErrorMessage(body: string, fallback: string): string {
     };
     const detail = parsed.detail;
     if (typeof detail === "object" && detail !== null) {
+      if (detail.code === "totp_not_supported_on_extension") {
+        return (
+          "Two-factor authentication is not supported in the browser extension yet. " +
+          "Sign in at the Flint Apply website to use your account, then return to the extension."
+        );
+      }
       if (detail.code === "invalid_redirect_uri") {
+        const callback = buildExtensionOAuthRedirectUri();
         return (
           "Extension OAuth redirect mismatch. Rebuild and reload the extension, " +
-          "then ensure Google Console has: http://localhost:3000/auth/extension/google/callback"
+          `then ensure Google Console has: ${callback}`
         );
       }
       if (detail.code === "oauth_failed" && detail.message?.includes("invalid_client")) {

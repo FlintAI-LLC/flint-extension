@@ -9,6 +9,7 @@ import {
   fetchRecentTailoredSessions,
 } from "../src/autofillApi.js";
 import { openFlintDeepLink } from "../src/flintDeepLink.js";
+import { FLINT_DESKTOP_HANDOFF_ENABLED } from "../src/brand.js";
 import { injectAndExpandFloatingPanel } from "../src/floatingPanelInject.js";
 import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { extractJobPostingFromHtml } from "../src/jdParse.js";
@@ -107,6 +108,10 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message.type === "OPEN_FLINT_DEEP_LINK") {
+      if (!FLINT_DESKTOP_HANDOFF_ENABLED) {
+        sendResponse({ ok: false, error: "Desktop handoff disabled" });
+        return true;
+      }
       openFlintDeepLink(message.url).catch(() => {
         // Non-fatal: user can retry from the popup.
       });
