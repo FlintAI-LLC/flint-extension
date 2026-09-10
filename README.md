@@ -80,7 +80,7 @@ The web app uses `/api/auth/callback/google` on the same host. Do not point the 
 - Token values are never written to `console.*` or any log.
 - JD text is sent only via `Bearer` header to the API, never embedded in URLs.
 - Desktop `flint://` handoff is disabled until the interview app ships.
-- `web_accessible_resources` uses `<all_urls>` so the floating drawer iframe can load when you open the extension on any job board (required for toolbar + `activeTab` injection).
+- `web_accessible_resources` matches the floating-panel / autofill runner hosts (LinkedIn, Greenhouse, Lever, Ashby, Workday, iCIMS, UKG, Jobright) so the drawer iframe can load on those pages without exposing popup/chunks to every origin.
 - No `eval`, no `innerHTML` assignment anywhere in the extension.
 
 ## Permissions justification

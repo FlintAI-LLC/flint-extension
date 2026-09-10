@@ -121,7 +121,20 @@
         "brand/*",
         "icons/icon48.png"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://*.lever.co/*",
+        "https://jobs.ashbyhq.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.icims.com/*",
+        "https://*.ukg.net/*",
+        "https://jobright.ai/*",
+        "https://www.jobright.ai/*",
+        "https://www.linkedin.com/*",
+        "https://linkedin.com/*"
+      ]
     }
   ],
   "browser_specific_settings": {
