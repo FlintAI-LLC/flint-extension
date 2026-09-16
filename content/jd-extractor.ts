@@ -9,6 +9,7 @@ import { resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import {
   extractMyGreenhouseFromDocument,
   isMyGreenhouseHost,
+  sanitizeMyGreenhouseExtractedFields,
 } from "../src/myGreenhouseExtract.js";
 import selectorsConfig from "./jd-selectors.json";
 
@@ -306,14 +307,25 @@ async function _extractJDInner(): Promise<ExtractedJD> {
   if (isMyGreenhouseHost(window.location.hostname)) {
     const myGh = extractMyGreenhouseFromDocument(document);
     if (myGh && myGh.text.length >= HEURISTIC_MIN_LENGTH) {
+      const { title, company } = sanitizeMyGreenhouseExtractedFields(
+        myGh.title,
+        myGh.company,
+      );
       return {
-        title: myGh.title || document.title,
-        company: myGh.company,
+        title,
+        company,
         text: myGh.text,
         url: window.location.href,
         extraction_method: "structured",
       };
     }
+    return {
+      title: "",
+      company: "",
+      text: "",
+      url: window.location.href,
+      extraction_method: "heuristic",
+    };
   }
 
   if (isUkgRecruitingHost(window.location.href)) {

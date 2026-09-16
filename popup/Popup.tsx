@@ -12,7 +12,10 @@ import { buildTailorInFlintApplyUrl, getGoogleClientId } from "../src/urls.js";
 import { PRODUCT_NAME, FLINT_DESKTOP_NAME, FLINT_DESKTOP_HANDOFF_ENABLED } from "../src/brand.js";
 import { PopupHeader } from "./BrandWordmark.js";
 import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
-import { isMyGreenhouseHost } from "../src/myGreenhouseExtract.js";
+import {
+  isMyGreenhouseHost,
+  sanitizeMyGreenhouseExtractedFields,
+} from "../src/myGreenhouseExtract.js";
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
 import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
@@ -331,33 +334,54 @@ export function Popup(): React.ReactElement {
         }
       : null;
 
-    const bestParsed = pickBetterJd(
-      swAsExtracted
-        ? { title: swAsExtracted.title, company: swAsExtracted.company, text: swAsExtracted.text }
-        : null,
-      pageJd
+    const myGreenhouseTab =
+      tab.url && (() => {
+        try {
+          return isMyGreenhouseHost(new URL(tab.url).hostname);
+        } catch {
+          return false;
+        }
+      })();
+
+    const bestParsed = myGreenhouseTab
+      ? pageJd
         ? { title: pageJd.title, company: pageJd.company, text: pageJd.text }
-        : null,
-    );
+        : null
+      : pickBetterJd(
+          swAsExtracted
+            ? { title: swAsExtracted.title, company: swAsExtracted.company, text: swAsExtracted.text }
+            : null,
+          pageJd
+            ? { title: pageJd.title, company: pageJd.company, text: pageJd.text }
+            : null,
+        );
 
     if (
       bestParsed &&
       bestParsed.text.trim().length >= 200 &&
-      (structuredParsed || scoreJdText(finalizeJdText(bestParsed.text)) >= 0)
+      (myGreenhouseTab || structuredParsed || scoreJdText(finalizeJdText(bestParsed.text)) >= 0)
     ) {
       const structuredWinner =
+        !myGreenhouseTab &&
         structuredParsed !== null &&
         bestParsed.text === structuredParsed.text &&
         bestParsed.title === structuredParsed.title;
       const finalText = structuredWinner
         ? truncateJdText(bestParsed.text)
         : finalizeJdText(bestParsed.text);
+      const ghFields = myGreenhouseTab
+        ? sanitizeMyGreenhouseExtractedFields(bestParsed.title, bestParsed.company)
+        : { title: bestParsed.title, company: bestParsed.company };
       setJd({
-        title: bestParsed.title || tab.title || "Untitled Role",
-        company: bestParsed.company,
+        title: ghFields.title || bestParsed.title || tab.title || "Untitled Role",
+        company: ghFields.company,
         text: finalText,
         url: tab.url,
-        extraction_method: structuredParsed ? "structured" : (pageJd?.extraction_method ?? "heuristic"),
+        extraction_method: myGreenhouseTab
+          ? (pageJd?.extraction_method ?? "structured")
+          : structuredParsed
+            ? "structured"
+            : (pageJd?.extraction_method ?? "heuristic"),
       });
       setNotOnJobMessage(null);
       setView("job_ready");
