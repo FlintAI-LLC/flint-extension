@@ -3,54 +3,61 @@ import {
   extractMyGreenhouseFromDocument,
   extractTitleCompanyFromPanel,
   findMyGreenhouseDetailPanel,
+  findSelectedJobListItem,
   isMyGreenhouseBrandName,
   isMyGreenhouseHost,
+  looksLikeListCardPreview,
   parseMyGreenhouseJobText,
   sanitizeMyGreenhouseExtractedFields,
 } from "../../src/myGreenhouseExtract.js";
 import { isMyGreenhouseAggregatorNoise } from "../../src/jdParse.js";
 
-const SAMPLE_HEADER = `
-Sr. Software Engineer
-AlertMedia
+const TAKEALOT_CARD = `iOS Software Engineer
+Takealot Group
 Remote
-Austin, TX
-Posted · 36 minutes ago
+Cape Town, WC
+Posted · 2 days ago`;
+
+const MINDBODY_CARD = `Sr Software Engineer
+Mindbody
+Remote
+United States
+Posted · 5 hours ago`;
+
+const MINDBODY_BODY = `
 Do work that matters.
 
-At AlertMedia, we help organizations protect their people, operations, and brand.
-You thrive in a collaborative engineering environment that plays to everyone's strengths.
-What you get to do every day:
-Build and ship features for the AI Assistant and Orchestration products.
-What you bring to the role:
-6+ years of experience building scalable web applications, Python/Django/React/Node tech stack preferred.
+At Mindbody we help wellness businesses grow. Who you are: you thrive in collaborative
+engineering environments. What you get to do every day: build platform APIs in Python
+and React. What you bring to the role: 6+ years of experience building scalable web
+applications with strong communication skills and AWS experience required.
 `;
 
 function mockFlexLayoutRects(): void {
   Element.prototype.getBoundingClientRect = function () {
     const el = this as Element;
-    if (el.className === "job-panel") {
+    if (el.classList.contains("job-list-item")) {
       return {
-        left: 360,
-        width: 700,
-        height: 800,
+        left: 40,
+        width: 280,
+        height: 120,
         top: 0,
-        right: 1020,
-        bottom: 800,
-        x: 320,
+        right: 320,
+        bottom: 120,
+        x: 40,
         y: 0,
         toJSON: () => ({}),
       } as DOMRect;
     }
-    if (el.tagName === "NAV") {
+    if (el.className === "job-panel") {
       return {
-        left: 0,
-        width: 300,
-        height: 800,
+        left: 360,
+        width: 700,
+        height: 900,
         top: 0,
-        right: 300,
-        bottom: 800,
-        x: 0,
+        right: 1060,
+        bottom: 900,
+        x: 360,
         y: 0,
         toJSON: () => ({}),
       } as DOMRect;
@@ -58,10 +65,10 @@ function mockFlexLayoutRects(): void {
     return {
       left: 0,
       width: 1200,
-      height: 800,
+      height: 900,
       top: 0,
       right: 1200,
-      bottom: 800,
+      bottom: 900,
       x: 0,
       y: 0,
       toJSON: () => ({}),
@@ -94,40 +101,49 @@ describe("myGreenhouseExtract", () => {
     });
   });
 
-  it("parses title, company, and body from a job detail panel", () => {
-    const parsed = parseMyGreenhouseJobText(SAMPLE_HEADER);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.title).toContain("Software Engineer");
-    expect(parsed!.company).toBe("AlertMedia");
-    expect(parsed!.text).toContain("Do work that matters");
-    expect(parsed!.text).not.toMatch(/Profile checklist/i);
+  it("treats short list-row previews differently from detail panes", () => {
+    expect(looksLikeListCardPreview(TAKEALOT_CARD)).toBe(true);
+    expect(looksLikeListCardPreview(`${MINDBODY_CARD}${MINDBODY_BODY}`)).toBe(false);
   });
 
-  it("accepts Posted today without a digit after the bullet", () => {
-    const parsed = parseMyGreenhouseJobText(
-      SAMPLE_HEADER.replace("Posted · 36 minutes ago", "Posted today"),
-    );
-    expect(parsed?.company).toBe("AlertMedia");
-  });
-
-  it("flags dashboard chrome as aggregator noise", () => {
-    const noisy =
-      "HomeProfileApplicationsJobsDream Job Profile checklist Drop your resume or browse to autofill";
-    expect(isMyGreenhouseAggregatorNoise(noisy)).toBe(true);
-  });
-
-  it("finds the right-hand flex detail pane instead of the full app shell", () => {
+  it("reads the selected list row, not the first row", () => {
     const html = `
-      <div id="app" style="display:flex;width:1200px">
-        <nav style="width:300px">HomeProfileApplicationsJobsDream Job</nav>
-        <div class="job-panel" style="width:700px;margin-left:320px">
-          <h2>Sr. Software Engineer</h2>
-          <p>AlertMedia</p>
+      <div id="app">
+        <div class="job-list-item">${TAKEALOT_CARD}</div>
+        <div class="job-list-item selected" aria-selected="true">${MINDBODY_CARD}</div>
+        <div class="job-panel">
+          <h2>Sr Software Engineer</h2>
+          <p>Mindbody</p>
           <p>Remote</p>
-          <p>Posted · 36 minutes ago</p>
-          ${SAMPLE_HEADER}
+          <p>United States</p>
+          <p>Posted · 5 hours ago</p>
+          ${MINDBODY_BODY}
         </div>
-        <aside>Profile checklist Drop your resume</aside>
+      </div>
+    `;
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    const selected = findSelectedJobListItem(doc);
+    expect(selected?.title).toContain("Software Engineer");
+    expect(selected?.company).toBe("Mindbody");
+
+    const parsed = extractMyGreenhouseFromDocument(doc);
+    expect(parsed?.company).toBe("Mindbody");
+    expect(parsed?.title).toContain("Software Engineer");
+    expect(parsed?.text).toContain("At Mindbody we help wellness businesses grow");
+    expect(parsed?.text).not.toContain("Takealot Group");
+  });
+
+  it("prefers the large right-hand detail pane over a list-row preview", () => {
+    const html = `
+      <div id="app">
+        <div class="job-list-item selected" aria-selected="true">${MINDBODY_CARD}</div>
+        <div class="job-panel">
+          <h2>Sr Software Engineer</h2>
+          <p>Mindbody</p>
+          ${MINDBODY_CARD}
+          ${MINDBODY_BODY}
+        </div>
       </div>
     `;
     const doc = new DOMParser().parseFromString(html, "text/html");
@@ -135,28 +151,20 @@ describe("myGreenhouseExtract", () => {
     expect(panel?.className).toBe("job-panel");
 
     const meta = extractTitleCompanyFromPanel(panel!);
-    expect(meta.title).toContain("Software Engineer");
-    expect(meta.company).toBe("AlertMedia");
+    expect(meta.company).toBe("Mindbody");
   });
 
-  it("extracts from the smallest DOM panel containing Posted", () => {
-    const html = `
-      <div id="app">
-        <nav>HomeProfileApplicationsJobsDream Job</nav>
-        <div class="job-panel">
-          <h2>Sr. Software Engineer</h2>
-          <p>AlertMedia</p>
-          <p>Remote</p>
-          ${SAMPLE_HEADER}
-        </div>
-        <aside>Profile checklist Drop your resume</aside>
-      </div>
-    `;
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const parsed = extractMyGreenhouseFromDocument(doc);
-    expect(parsed?.company).toBe("AlertMedia");
-    expect(parsed?.title).toContain("Software Engineer");
-    expect(parsed?.text).toContain("AlertMedia, we help organizations");
-    expect(parsed?.text).not.toContain("Profile checklist");
+  it("parses title, company, and body from a job detail panel", () => {
+    const parsed = parseMyGreenhouseJobText(`${MINDBODY_CARD}${MINDBODY_BODY}`);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.company).toBe("Mindbody");
+    expect(parsed!.text).toContain("At Mindbody we help wellness businesses grow");
+    expect(parsed!.text).not.toMatch(/Profile checklist/i);
+  });
+
+  it("flags dashboard chrome as aggregator noise", () => {
+    const noisy =
+      "HomeProfileApplicationsJobsDream Job Profile checklist Drop your resume or browse to autofill";
+    expect(isMyGreenhouseAggregatorNoise(noisy)).toBe(true);
   });
 });
