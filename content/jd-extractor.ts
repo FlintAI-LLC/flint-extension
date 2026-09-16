@@ -6,6 +6,10 @@ import {
   isUkgRecruitingHost,
 } from "../src/jdParse.js";
 import { resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
+import {
+  extractMyGreenhouseFromDocument,
+  isMyGreenhouseHost,
+} from "../src/myGreenhouseExtract.js";
 import selectorsConfig from "./jd-selectors.json";
 
 const HEURISTIC_MIN_LENGTH = 200;
@@ -55,11 +59,16 @@ function queryFirst(selectors: string[]): string {
 }
 
 function detectSite(config: SelectorsConfig): SiteSelectors | null {
-  const host = window.location.hostname;
-  const path = window.location.pathname;
+  const host = window.location.hostname.toLowerCase();
+  const path = window.location.pathname.toLowerCase();
   for (const site of Object.values(config)) {
     for (const pattern of site.matches) {
-      if (host.includes(pattern) || path.includes(pattern)) return site;
+      const patternLower = pattern.toLowerCase();
+      if (patternLower.startsWith("/")) {
+        if (host.includes("linkedin.com") && path.includes(patternLower)) return site;
+        continue;
+      }
+      if (host.includes(patternLower) || path.includes(patternLower)) return site;
     }
   }
   return null;
@@ -293,6 +302,19 @@ function extractFromUkgEmbeddedScript(): { title: string; company: string; text:
 
 async function _extractJDInner(): Promise<ExtractedJD> {
   const config: SelectorsConfig = selectorsConfig;
+
+  if (isMyGreenhouseHost(window.location.hostname)) {
+    const myGh = extractMyGreenhouseFromDocument(document);
+    if (myGh && myGh.text.length >= HEURISTIC_MIN_LENGTH) {
+      return {
+        title: myGh.title || document.title,
+        company: myGh.company,
+        text: myGh.text,
+        url: window.location.href,
+        extraction_method: "structured",
+      };
+    }
+  }
 
   if (isUkgRecruitingHost(window.location.href)) {
     const embedded = extractFromUkgEmbeddedScript();

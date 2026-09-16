@@ -1,6 +1,7 @@
 /** Hosts where auto-extracted JD text may be incomplete or aggregator-summarized. */
 
 const UNCERTAIN_JD_HOST_PATTERNS = [
+  "my.greenhouse.io",
   "jobright.ai",
   "linkedin.com",
   "indeed.com",

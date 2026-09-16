@@ -12,6 +12,7 @@ import { buildTailorInFlintApplyUrl, getGoogleClientId } from "../src/urls.js";
 import { PRODUCT_NAME, FLINT_DESKTOP_NAME, FLINT_DESKTOP_HANDOFF_ENABLED } from "../src/brand.js";
 import { PopupHeader } from "./BrandWordmark.js";
 import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
+import { isMyGreenhouseHost } from "../src/myGreenhouseExtract.js";
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
 import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
@@ -300,7 +301,9 @@ export function Popup(): React.ReactElement {
     // LinkedIn is a fully client-rendered SPA — unauthenticated HTML fetches
     // never contain JSON-LD and take 1-3s for nothing. Skip them and rely
     // entirely on the content script which has the live authenticated DOM.
-    const skipHtmlFetch = tab.url ? isLinkedInJobPage(tab.url) : false;
+    const skipHtmlFetch = tab.url
+      ? isLinkedInJobPage(tab.url) || isMyGreenhouseHost(new URL(tab.url).hostname)
+      : false;
 
     const [directParsed, swParsed, pageJd] = await _withTimeout(
       Promise.all([
@@ -362,7 +365,9 @@ export function Popup(): React.ReactElement {
       setNotOnJobMessage(
         tab.url && isLinkedInJobPage(tab.url)
           ? "Could not read this LinkedIn job yet. Select a job in the list, wait for the description to load, then reopen the extension."
-          : null,
+          : tab.url && isMyGreenhouseHost(new URL(tab.url).hostname)
+            ? "Could not read this MyGreenhouse job yet. Click a job in the list so the full posting is visible, then reopen the extension."
+            : null,
       );
       setView("not_on_job");
     }
