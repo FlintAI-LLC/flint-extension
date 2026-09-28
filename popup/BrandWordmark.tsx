@@ -1,4 +1,5 @@
 import { PRODUCT_NAME, wordmarkUrl } from "../src/brand.js";
+import { getExtensionVersion } from "../src/extensionVersion.js";
 
 export function BrandWordmark({
   className = "brand-wordmark",
@@ -23,7 +24,10 @@ export function PopupHeader({
 }): React.ReactElement {
   return (
     <header className="popup-header">
-      <BrandWordmark />
+      <div className="popup-header-brand">
+        <BrandWordmark />
+        <span className="ext-version" title="Extension version">v{getExtensionVersion()}</span>
+      </div>
       {children}
     </header>
   );

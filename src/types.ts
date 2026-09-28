@@ -40,21 +40,26 @@ export interface ExtensionLoginResponse {
   user: UserInfo;
 }
 
-export type GoogleLoginResult =
-  | { success: true; user: UserInfo }
-  | { success: false; error: string; pending?: false }
-  | { success: false; error: ""; pending: true };
+/** The three OAuth SSO providers the extension supports. */
+export type OAuthProviderId = "google" | "github" | "microsoft";
+
+export type OAuthLoginResult =
+  | { success: true; user: UserInfo; provider: OAuthProviderId }
+  | { success: false; error: string; provider: OAuthProviderId; pending?: false }
+  | { success: false; error: ""; provider: OAuthProviderId; pending: true };
 
 export type PopupMessage =
   | { type: "EXTRACT_JD" }
   | { type: "JD_RESULT"; jd: ExtractedJD | null }
   | { type: "JD_ERROR"; error: string }
-  | { type: "GOOGLE_LOGIN" }
-  | { type: "GOOGLE_LOGIN_RESULT"; result: GoogleLoginResult }
+  | { type: "OAUTH_LOGIN"; provider: OAuthProviderId }
+  | { type: "OAUTH_LOGIN_RESULT"; result: OAuthLoginResult }
   | { type: "FETCH_PAGE_HTML"; url: string }
+  | { type: "FETCH_JSON"; url: string }
   | { type: "PARSE_JD_FROM_URL"; url: string }
   | { type: "OPEN_FLINT_DEEP_LINK"; url: string }
   | { type: "INJECT_JD_EXTRACTOR"; tabId: number }
+  | { type: "JD_EXTRACTOR_PING" }
   | { type: "FETCH_AUTOFILL_PAYLOAD"; jdId: string }
   | { type: "FETCH_RECENT_TAILORED_SESSIONS" }
   | { type: "PROBE_AUTOFILL"; jdId?: string }
@@ -68,8 +73,14 @@ export type AutofillPayloadResult =
 
 export type InjectJdExtractorResult = { ok: true } | { ok: false; error: string };
 
+export type JdExtractorPingResult = { ok: true } | { ok: false };
+
 export type FetchPageHtmlResult =
   | { html: string }
+  | { error: string };
+
+export type FetchJsonResult =
+  | { json: Record<string, unknown> }
   | { error: string };
 
 export type ParseJdFromUrlResult =

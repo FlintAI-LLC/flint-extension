@@ -7,19 +7,37 @@
  * live in chrome.storage exactly as it does for the toolbar popup today.
  */
 import { PRODUCT_NAME, wordmarkUrl } from "../../src/brand.js";
+import { isolateExtensionUiClicks } from "../../src/extensionClickIsolation.js";
+import {
+  findMyGreenhouseUiMountRoot,
+  reparentFlintUiHost,
+} from "../../src/myGreenhouseUiMount.js";
+import { FLINT_CONTENT_SOURCE, FLINT_MYGH_JOB_CHANGED } from "../../src/panelMessages.js";
 import { getPanelExpanded, setPanelExpanded } from "./panelState.js";
 
 const HOST_ATTRIBUTE = "data-flint-floating-shell";
 const LISTENERS_ATTRIBUTE = "data-flint-floating-listeners";
 const COLLAPSE_MESSAGE_TYPE = "FLINT_FLOATING_COLLAPSE";
 const DRAWER_WIDTH_PX = 360;
-
 /** Single active controller for document-level listeners (avoids stacked handlers). */
 let activeShell: FloatingShell | null = null;
 
 const SHELL_STYLES = `
   :host {
     all: initial;
+    display: block;
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    width: 0;
+    height: 0;
+    overflow: visible;
+    z-index: 2147483647;
+    pointer-events: none;
+  }
+  .fab,
+  .drawer {
+    pointer-events: auto;
   }
   .fab {
     position: fixed;
@@ -129,6 +147,17 @@ function onFrameMessage(event: MessageEvent): void {
   activeShell?.handleFrameMessage(event);
 }
 
+function onPageMessage(event: MessageEvent): void {
+  if (event.source !== window) return;
+  const data = event.data as { type?: unknown; source?: unknown } | null;
+  if (
+    data?.type === FLINT_MYGH_JOB_CHANGED &&
+    data?.source === FLINT_CONTENT_SOURCE
+  ) {
+    activeShell?.handleMyGreenhouseJobChanged();
+  }
+}
+
 function ensureDocumentListeners(): void {
   if (document.documentElement.hasAttribute(LISTENERS_ATTRIBUTE)) return;
   document.documentElement.setAttribute(LISTENERS_ATTRIBUTE, "1");
@@ -139,12 +168,14 @@ function ensureDocumentListeners(): void {
   // Escape inside the extension iframe never bubbles to the parent document —
   // the popup posts FLINT_FLOATING_COLLAPSE instead.
   window.addEventListener("message", onFrameMessage);
+  window.addEventListener("message", onPageMessage);
 }
 
 function teardownDocumentListeners(): void {
   document.removeEventListener("click", onDocumentClick, true);
   document.removeEventListener("keydown", onDocumentKeydown);
   window.removeEventListener("message", onFrameMessage);
+  window.removeEventListener("message", onPageMessage);
   document.documentElement.removeAttribute(LISTENERS_ATTRIBUTE);
 }
 
@@ -155,10 +186,13 @@ export class FloatingShell {
   private drawerEl: HTMLElement | null = null;
   private frameEl: HTMLIFrameElement | null = null;
   private expanded = false;
+  /** Set when MyGreenhouse selection changes; next expand remounts the popup. */
+  private pendingJobRefresh = false;
 
   mount(anchor: HTMLElement = document.body): void {
     if (this.host) {
       activeShell = this;
+      reparentFlintUiHost(this.host);
       return;
     }
 
@@ -173,6 +207,8 @@ export class FloatingShell {
       this.drawerEl = this.shadow.querySelector<HTMLElement>(".drawer");
       this.frameEl = this.shadow.querySelector<HTMLIFrameElement>(".drawer-frame");
       this.expanded = Boolean(this.drawerEl && !this.drawerEl.hidden);
+      isolateExtensionUiClicks(existing, existing.shadowRoot ?? undefined);
+      reparentFlintUiHost(existing);
       activeShell = this;
       ensureDocumentListeners();
       return;
@@ -181,6 +217,7 @@ export class FloatingShell {
     this.host = document.createElement("div");
     this.host.setAttribute(HOST_ATTRIBUTE, "true");
     this.shadow = this.host.attachShadow({ mode: "open" });
+    isolateExtensionUiClicks(this.host, this.shadow);
 
     const style = document.createElement("style");
     style.textContent = SHELL_STYLES;
@@ -190,10 +227,16 @@ export class FloatingShell {
     this.drawerEl = this.buildDrawer();
 
     this.shadow.append(this.fabButton, this.drawerEl);
-    anchor.appendChild(this.host);
+    const mountRoot = findMyGreenhouseUiMountRoot() ?? anchor;
+    mountRoot.appendChild(this.host);
+    reparentFlintUiHost(this.host);
 
     activeShell = this;
     ensureDocumentListeners();
+  }
+
+  getHost(): HTMLElement | null {
+    return this.host;
   }
 
   isExpanded(): boolean {
@@ -207,6 +250,29 @@ export class FloatingShell {
     if (this.drawerEl) this.drawerEl.hidden = false;
     if (this.fabButton) this.fabButton.hidden = true;
     void setPanelExpanded(true);
+    // Re-extract only after the user picks another job — not on every FAB reopen.
+    if (this.pendingJobRefresh) {
+      this.reloadPanelFrame("job-changed");
+      this.pendingJobRefresh = false;
+    }
+  }
+
+  /** Reload popup iframe so React remounts and re-extracts the current job. */
+  reloadPanelFrame(_reason: string): void {
+    if (!this.frameEl) return;
+    const url = `${chrome.runtime.getURL("popup/index.html")}?flint=${Date.now()}`;
+    this.frameEl.src = url;
+  }
+
+  /**
+   * MyGreenhouse job selection changed — tuck the drawer back to the FAB and
+   * mark the popup stale so the next open re-reads the posting.
+   */
+  handleMyGreenhouseJobChanged(): void {
+    this.pendingJobRefresh = true;
+    if (this.expanded) {
+      this.collapse();
+    }
   }
 
   collapse(): void {
@@ -224,7 +290,13 @@ export class FloatingShell {
   /** Applies the last persisted expand/collapse state for this session. */
   async restorePersistedState(): Promise<void> {
     const shouldExpand = await getPanelExpanded();
-    if (shouldExpand) this.expand();
+    if (!shouldExpand) return;
+    if (!this.host) this.mount();
+    activeShell = this;
+    this.expanded = true;
+    if (this.drawerEl) this.drawerEl.hidden = false;
+    if (this.fabButton) this.fabButton.hidden = true;
+    this.reloadPanelFrame("session-restore");
   }
 
   handleOutsideClick(event: MouseEvent): void {
@@ -268,7 +340,18 @@ export class FloatingShell {
     icon.src = chrome.runtime.getURL("icons/icon48.png");
     icon.alt = PRODUCT_NAME;
     button.appendChild(icon);
-    button.addEventListener("click", () => this.expand());
+    const open = (): void => {
+      this.expand();
+    };
+    button.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        open();
+      },
+      true,
+    );
     return button;
   }
 

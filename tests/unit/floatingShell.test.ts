@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingShell } from "../../content/floating/shell.js";
-import { getPanelExpanded } from "../../content/floating/panelState.js";
+import {
+  FLOATING_PANEL_EXPANDED_KEY,
+  getPanelExpanded,
+} from "../../content/floating/panelState.js";
+import {
+  FLINT_CONTENT_SOURCE,
+  FLINT_MYGH_JOB_CHANGED,
+} from "../../src/panelMessages.js";
 import { resetChromeStore } from "../setup.js";
 
 function clickOutside(): void {
@@ -59,6 +66,46 @@ describe("FloatingShell", () => {
     const frame = host.shadowRoot!.querySelector(".drawer-frame") as HTMLIFrameElement;
 
     expect(frame.src).toBe("chrome-extension://fake-id/popup/index.html");
+  });
+
+  it("does not reload the popup iframe when reopening the same job", () => {
+    const shell = new FloatingShell();
+    shell.mount();
+    shell.expand();
+
+    const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
+    const frame = host.shadowRoot!.querySelector(".drawer-frame") as HTMLIFrameElement;
+    const srcAfterFirstExpand = frame.src;
+
+    shell.collapse();
+    shell.expand();
+
+    expect(frame.src).toBe(srcAfterFirstExpand);
+  });
+
+  it("reloads the popup iframe after MyGreenhouse job selection changes", () => {
+    const shell = new FloatingShell();
+    shell.mount();
+    shell.expand();
+
+    const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
+    const frame = host.shadowRoot!.querySelector(".drawer-frame") as HTMLIFrameElement;
+    const srcBeforeJobChange = frame.src;
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: FLINT_MYGH_JOB_CHANGED,
+          source: FLINT_CONTENT_SOURCE,
+          key: "Engineer\u0000Acme",
+        },
+        source: window,
+      }),
+    );
+    shell.expand();
+
+    expect(frame.src).not.toBe(srcBeforeJobChange);
+    expect(frame.src).toContain("flint=");
   });
 
   it("collapses on outside click but not on clicks inside the drawer", () => {
@@ -188,6 +235,42 @@ describe("FloatingShell", () => {
     );
 
     expect(shell.isExpanded()).toBe(false);
+  });
+
+  it("collapses the drawer when MyGreenhouse job selection changes", () => {
+    const shell = new FloatingShell();
+    shell.mount();
+    shell.expand();
+    expect(shell.isExpanded()).toBe(true);
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: FLINT_MYGH_JOB_CHANGED,
+          source: FLINT_CONTENT_SOURCE,
+          key: "Engineer\u0000Acme",
+        },
+        source: window,
+      }),
+    );
+
+    expect(shell.isExpanded()).toBe(false);
+  });
+
+  it("restorePersistedState reloads the popup iframe for fresh extraction", async () => {
+    const shell = new FloatingShell();
+    shell.mount();
+
+    const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
+    const frame = host.shadowRoot!.querySelector(".drawer-frame") as HTMLIFrameElement;
+    const initialSrc = frame.src;
+
+    await chrome.storage.session.set({ [FLOATING_PANEL_EXPANDED_KEY]: true });
+    await shell.restorePersistedState();
+
+    expect(shell.isExpanded()).toBe(true);
+    expect(frame.src).not.toBe(initialSrc);
+    expect(frame.src).toContain("flint=");
   });
 
   it("does not stack document listeners across two FloatingShell instances", () => {

@@ -1,5 +1,8 @@
 import type { FieldFillOutcome, FillResult } from "./types.js";
-import { querySelectorSafe } from "./fill-utils.js";
+import { countHighConfidenceFilled } from "./types.js";
+import { isolateExtensionUiClicks } from "../../src/extensionClickIsolation.js";
+import { broadcastJumpToField } from "./iframe-bridge.js";
+import { highlightFieldAtSelector } from "./field-highlight.js";
 
 export interface TailoredSessionOption {
   jd_id: string;
@@ -21,14 +24,17 @@ export interface AutofillOverlayCallbacks {
 }
 
 const DISMISS_STORAGE_PREFIX = "flint_autofill_dismissed:";
-const HIGHLIGHT_CLASS = "flint-autofill-field-highlight";
 
 const OVERLAY_STYLES = `
   :host {
     all: initial;
+    display: block;
     position: fixed;
-    bottom: 20px;
-    right: 20px;
+    inset: 0;
+    width: 0;
+    height: 0;
+    overflow: visible;
+    pointer-events: none;
     z-index: 2147483646;
     font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     font-size: 14px;
@@ -36,6 +42,11 @@ const OVERLAY_STYLES = `
     color: #0f172a;
   }
   .panel {
+    position: fixed;
+    /* Above the Flint FAB (56px + 20px margin). */
+    right: 20px;
+    bottom: 88px;
+    pointer-events: auto;
     width: 320px;
     max-width: calc(100vw - 32px);
     background: #ffffff;
@@ -160,20 +171,28 @@ export class AutofillOverlay {
   private shadow: ShadowRoot | null = null;
   private panel: HTMLElement | null = null;
   private view: OverlayView = "hidden";
-  private highlightTimer: ReturnType<typeof setTimeout> | null = null;
-  private highlightStyleEl: HTMLStyleElement | null = null;
 
   constructor(callbacks: AutofillOverlayCallbacks, pageUrl = globalThis.location?.href ?? "") {
     this.callbacks = callbacks;
     this.pageUrl = pageUrl;
   }
 
+  getHost(): HTMLElement | null {
+    return this.host;
+  }
+
   mount(anchor: HTMLElement = document.body): void {
-    if (this.host) return;
+    if (this.host?.parentElement === anchor) return;
+
+    if (this.host) {
+      anchor.appendChild(this.host);
+      return;
+    }
 
     this.host = document.createElement("div");
     this.host.setAttribute("data-flint-autofill-overlay", "true");
     this.shadow = this.host.attachShadow({ mode: "open" });
+    isolateExtensionUiClicks(this.host, this.shadow);
 
     const style = document.createElement("style");
     style.textContent = OVERLAY_STYLES;
@@ -185,7 +204,6 @@ export class AutofillOverlay {
     this.shadow.appendChild(this.panel);
 
     anchor.appendChild(this.host);
-    this.ensureHighlightStyle();
   }
 
   getView(): OverlayView {
@@ -280,16 +298,22 @@ export class AutofillOverlay {
   showResult(result: FillResult): void {
     this.renderPanel((panel) => {
       const reviewFields = fieldsNeedingAttention(result.fields);
+      const highConfidence = countHighConfidenceFilled(result.fields);
+      const needsReviewOnly = result.fields.filter((f) => f.status === "filled_needs_review").length;
+
       const heading = document.createElement("p");
       heading.className = "title";
       heading.textContent = `${result.percent_filled}% filled`;
 
       const subtitle = document.createElement("p");
       subtitle.className = "subtitle";
-      subtitle.textContent =
-        reviewFields.length > 0
-          ? `${reviewFields.length} field${reviewFields.length === 1 ? "" : "s"} need your review`
-          : "All fillable fields were handled automatically.";
+      if (reviewFields.length === 0) {
+        subtitle.textContent = "All fillable fields were handled automatically.";
+      } else if (needsReviewOnly > 0 && highConfidence === 0) {
+        subtitle.textContent = `${needsReviewOnly} field${needsReviewOnly === 1 ? "" : "s"} filled — please verify each value before submitting.`;
+      } else {
+        subtitle.textContent = `${reviewFields.length} field${reviewFields.length === 1 ? "" : "s"} still need your attention (verify values, attach resume, or complete manually).`;
+      }
 
       panel.append(heading, subtitle);
 
@@ -348,18 +372,10 @@ export class AutofillOverlay {
 
   jumpToField(selector: string | null): void {
     if (!selector) return;
-    const el = querySelectorSafe(document, selector);
-    if (!(el instanceof HTMLElement)) return;
-
-    if (typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const highlighted = highlightFieldAtSelector(document, selector);
+    if (!highlighted) {
+      broadcastJumpToField(selector);
     }
-    el.classList.add(HIGHLIGHT_CLASS);
-
-    if (this.highlightTimer) clearTimeout(this.highlightTimer);
-    this.highlightTimer = setTimeout(() => {
-      el.classList.remove(HIGHLIGHT_CLASS);
-    }, 2400);
   }
 
   showMessage(title: string, subtitle: string): void {
@@ -399,21 +415,6 @@ export class AutofillOverlay {
     this.host = null;
     this.shadow = null;
     this.panel = null;
-    this.highlightStyleEl?.remove();
-    this.highlightStyleEl = null;
-    if (this.highlightTimer) clearTimeout(this.highlightTimer);
-  }
-
-  private ensureHighlightStyle(): void {
-    if (this.highlightStyleEl || typeof document === "undefined") return;
-    this.highlightStyleEl = document.createElement("style");
-    this.highlightStyleEl.textContent = `
-      .${HIGHLIGHT_CLASS} {
-        outline: 3px solid #0f766e !important;
-        outline-offset: 2px;
-      }
-    `;
-    document.head.appendChild(this.highlightStyleEl);
   }
 
   private renderPanel(build: (panel: HTMLElement) => void): void {
@@ -434,7 +435,30 @@ export class AutofillOverlay {
       button.type = "button";
       button.className = action.className;
       button.textContent = action.label;
-      button.addEventListener("click", action.onClick);
+      const run = (): void => {
+        action.onClick();
+      };
+      for (const type of ["pointerdown", "mousedown"] as const) {
+        button.addEventListener(
+          type,
+          (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+          },
+          true,
+        );
+      }
+      button.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          run();
+        },
+        true,
+      );
       container.appendChild(button);
     }
     return container;

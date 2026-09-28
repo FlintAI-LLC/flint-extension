@@ -220,8 +220,18 @@ export function formatJdSections(text: string): string {
     .trim();
 }
 
+/** MyGreenhouse search/dashboard chrome mixed into a job detail capture. */
+export function isMyGreenhouseAggregatorNoise(text: string): boolean {
+  if (/HomeProfileApplications/i.test(text)) return true;
+  if (/Profile checklist/i.test(text) && /Drop your resume/i.test(text)) return true;
+  if (/Dream Job/i.test(text) && /Recommended Roles/i.test(text)) return true;
+  if (/Your job alerts/i.test(text) && /Search smarter, apply faster/i.test(text)) return true;
+  return false;
+}
+
 /** Job boards (Jobright, etc.) embed nav chrome and a sidebar job feed in the DOM. */
 export function isJobAggregatorNoise(text: string): boolean {
+  if (isMyGreenhouseAggregatorNoise(text)) return true;
   if (/Apply with Autofill/i.test(text) && /GOOD MATCH/i.test(text)) return true;
   if (/ASK ORION/i.test(text)) return true;
   if (/Upgrade to Turbo/i.test(text)) return true;
@@ -285,6 +295,12 @@ export function truncateJdText(text: string, max = JD_MAX_CHARS): string {
 
 export function finalizeJdText(text: string): string {
   return truncateJdText(polishStructuredJdText(stripJobAggregatorNoise(cleanJdText(text))));
+}
+
+/** Strip HTML tags when boards-api or DOM capture returns markup. */
+export function finalizeJdTextFromMaybeHtml(text: string): string {
+  const input = /<[a-z][\s\S]*>/i.test(text) ? stripHtml(text) : text;
+  return finalizeJdText(input);
 }
 
 export function cleanJdText(text: string): string {

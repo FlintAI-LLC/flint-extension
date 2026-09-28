@@ -47,6 +47,26 @@ html.flint-in-drawer .popup-header:not(:has(.btn-ghost)) {
   align-items: center;
 }
 
+.popup-header-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.ext-version {
+  font-size: 10px;
+  line-height: 1.2;
+  color: #94a3b8;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.ext-version-corner {
+  align-self: flex-end;
+  margin: -4px 0 0;
+}
+
 .popup-brand {
   display: flex;
   align-items: center;
@@ -230,6 +250,58 @@ html.flint-in-drawer .popup-header:not(:has(.btn-ghost)) {
   cursor: not-allowed;
 }
 
+.btn-github {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: #24292f;
+  color: #ffffff;
+  border: 1px solid #24292f;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-github:hover {
+  background: #32383f;
+  border-color: #32383f;
+}
+
+.btn-github:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-microsoft {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-microsoft:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.btn-microsoft:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .login-divider {
   display: flex;
   align-items: center;
@@ -330,4 +402,9 @@ html.flint-in-drawer .popup-header:not(:has(.btn-ghost)) {
 
 .char-count.warn {
   color: #dc2626;
+}
+
+.char-count.over {
+  color: #dc2626;
+  font-weight: 600;
 }

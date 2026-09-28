@@ -1,13 +1,19 @@
 import { PRODUCT_NAME } from "../../src/brand.js";
 import { observeApplicationSteps } from "./continuation.js";
 import { detectApplicationForm, observeApplicationForm } from "./detector.js";
-import type { FieldCandidate } from "./detector.js";
-import { fillApplicationForm } from "./fill-engine.js";
-import { fillGreenhouse } from "./greenhouse.js";
 import { AutofillOverlay } from "./overlay.js";
-import type { AutofillPayload, FillResult } from "./types.js";
+import {
+  autofillWithIframeFallback,
+  hasGreenhouseApplyIframe,
+  installIframeAutofillListener,
+} from "./iframe-bridge.js";
+import type { AutofillPayload } from "./types.js";
 import type { TailoredSessionOption } from "../../src/autofillApi.js";
 import { isAutofillEnabled } from "../../src/autofillFlags.js";
+import {
+  findMyGreenhouseUiMountRoot,
+  reparentFlintUiHost,
+} from "../../src/myGreenhouseUiMount.js";
 import { pickSessionMatch as matchTailoredSession } from "../../src/sessionMatcher.js";
 
 interface RecentSessionsResponse {
@@ -26,20 +32,19 @@ interface ProbeAutofillMessage {
   jdId?: string;
 }
 
-/**
- * Routing decision for which fill path to use. Greenhouse keeps its dedicated
- * wrapper (selector map takes priority regardless of payload.platform); every
- * other platform — including "unknown" — goes through the shared engine using
- * whatever match source (payload selector, then detector heuristic) resolves.
- */
-export function fillForPayload(
-  payload: AutofillPayload,
-  candidates: FieldCandidate[],
-  root: ParentNode,
-): FillResult {
-  return payload.platform === "greenhouse"
-    ? fillGreenhouse(payload, candidates, root)
-    : fillApplicationForm(payload, candidates, root);
+function hasMyGreenhouseApplySection(doc: Document): boolean {
+  const headings = doc.querySelectorAll("h1, h2, h3, h4, [role='heading']");
+  for (const heading of Array.from(headings)) {
+    if (/apply for this job/i.test(heading.textContent ?? "")) return true;
+  }
+  return false;
+}
+
+function isAutofillSurface(hostname: string): boolean {
+  const detection = detectApplicationForm(document.body, hostname);
+  if (detection.isApplicationForm) return true;
+  if (hostname !== "my.greenhouse.io") return false;
+  return hasGreenhouseApplyIframe(document) || hasMyGreenhouseApplySection(document);
 }
 
 function requestRecentSessions(): Promise<TailoredSessionOption[]> {
@@ -81,10 +86,17 @@ export function autofillFailureMessage(response: AutofillPayloadResponse): strin
   );
 }
 
+type OfferOutcome = "shown" | "no_sessions" | "dismissed" | "not_surface" | "skipped";
+
 export function startAutofillController(): void {
   if (typeof chrome === "undefined" || !chrome.runtime?.id) return;
 
   const hostname = window.location.hostname;
+
+  // Every frame listens for fill/jump broadcasts; only the top frame owns the overlay UI.
+  installIframeAutofillListener(hostname);
+  if (window !== window.top) return;
+
   const overlay = new AutofillOverlay({
     onAutofillConfirm: (jdId) => {
       void runAutofill(jdId);
@@ -95,7 +107,13 @@ export function startAutofillController(): void {
     onDismiss: () => undefined,
   });
 
-  overlay.mount();
+  const mountOverlay = (): void => {
+    const root = findMyGreenhouseUiMountRoot() ?? document.body;
+    overlay.mount(root);
+    const host = overlay.getHost();
+    if (host) reparentFlintUiHost(host);
+  };
+  mountOverlay();
 
   let recentSessions: TailoredSessionOption[] = [];
   let activeJdId: string | null = null;
@@ -129,7 +147,12 @@ export function startAutofillController(): void {
     }
 
     const detection = detectApplicationForm(document.body, hostname);
-    const result = fillForPayload(response.payload, detection.fieldCandidates, document.body);
+    const result = await autofillWithIframeFallback(
+      response.payload,
+      hostname,
+      detection.fieldCandidates,
+      document.body,
+    );
 
     filledThisStep = true;
     overlay.showResult(result);
@@ -163,20 +186,19 @@ export function startAutofillController(): void {
     }
   }
 
-  function maybeOffer(
-    detection = detectApplicationForm(document.body, hostname),
-    preferredJdId?: string,
-  ): void {
-    if (!autofillEnabled) return;
-    if (!detection.isApplicationForm || overlay.isDismissedForPage() || offering || filledThisStep) {
-      return;
-    }
-    if (recentSessions.length === 0) return;
+  function maybeOffer(preferredJdId?: string): OfferOutcome {
+    mountOverlay();
+    if (!autofillEnabled) return "skipped";
+    if (!isAutofillSurface(hostname)) return "not_surface";
+    if (overlay.isDismissedForPage()) return "dismissed";
+    if (offering || filledThisStep) return "skipped";
+    if (recentSessions.length === 0) return "no_sessions";
 
     offering = true;
     const match = matchTailoredSession(recentSessions, hostname);
     presentMatch(match, preferredJdId);
     offering = false;
+    return "shown";
   }
 
   chrome.runtime.onMessage.addListener((message: ProbeAutofillMessage, _sender, sendResponse) => {
@@ -190,18 +212,45 @@ export function startAutofillController(): void {
       }
 
       await refreshSessions();
-      const detection = detectApplicationForm(document.body, hostname);
-      if (!detection.isApplicationForm) {
+      if (!isAutofillSurface(hostname)) {
         overlay.showMessage(
           "No application form detected",
-          "Navigate to the job application form, then try Autofill again.",
+          "Open the job's apply form (scroll to Apply for this job), then try Autofill again.",
         );
         sendResponse({ ok: false, error: "no_form" });
         return;
       }
 
       filledThisStep = false;
-      maybeOffer(detection, message.jdId);
+      const outcome = maybeOffer(message.jdId);
+      if (outcome === "no_sessions") {
+        overlay.showMessage(
+          "No tailored resume yet",
+          `Tailor your resume for this job in ${PRODUCT_NAME}, then return here and click Autofill again.`,
+        );
+        sendResponse({ ok: false, error: "no_sessions" });
+        return;
+      }
+      if (outcome === "dismissed") {
+        overlay.showMessage(
+          "Autofill dismissed",
+          "You dismissed autofill on this page earlier. Reload the tab to see the prompt again.",
+        );
+        sendResponse({ ok: false, error: "dismissed" });
+        return;
+      }
+      if (outcome === "not_surface") {
+        overlay.showMessage(
+          "No application form detected",
+          "Open the job's apply form (scroll to Apply for this job), then try Autofill again.",
+        );
+        sendResponse({ ok: false, error: "no_form" });
+        return;
+      }
+      if (outcome === "skipped") {
+        sendResponse({ ok: false, error: "skipped" });
+        return;
+      }
       sendResponse({ ok: true });
     })();
 

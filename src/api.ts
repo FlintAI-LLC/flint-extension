@@ -1,5 +1,6 @@
 import type {
   ExtensionLoginResponse,
+  OAuthProviderId,
   SaveJDRequest,
   SaveJDResponse,
 } from "./types.js";
@@ -8,12 +9,35 @@ import { getApiBaseUrl } from "./urls.js";
 
 const API_BASE = getApiBaseUrl();
 
-// Contract: a 401 response anywhere in the API layer clears stored auth and
-// throws AuthError. Callers MUST NOT call clearAuth themselves on a 401 —
-// clearAuth is idempotent so a duplicate call is harmless, but relying on
-// this contract keeps refresh / login / save paths uniform.
+// Contract: a 401 on an authenticated route clears stored auth and throws
+// AuthError. Login failures return ApiError(401) so the popup can show
+// "invalid credentials" instead of "session expired".
 
 const REQUEST_TIMEOUT_MS = 6000;
+
+function messageForSession401(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      detail?: { code?: string } | string;
+    };
+    const detail = parsed.detail;
+    if (typeof detail === "object" && detail?.code) {
+      switch (detail.code) {
+        case "session_replaced":
+          return "You signed in elsewhere — please log in again.";
+        case "refresh_token_reuse":
+        case "refresh_token_expired":
+        case "refresh_token_invalid":
+          return "Session expired — please log in again.";
+        default:
+          break;
+      }
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return "Session expired — please log in again.";
+}
 
 async function request<T>(
   path: string,
@@ -40,17 +64,25 @@ async function request<T>(
     clearTimeout(timer);
   }
 
+  const body = await response.text().catch(() => "");
+
   if (response.status === 401) {
+    if (path === "/api/auth/extension/login") {
+      throw new ApiError(401, body || "Unauthorized");
+    }
     await clearAuth();
-    throw new AuthError("Session expired — please log in again.");
+    throw new AuthError(messageForSession401(body));
   }
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
     throw new ApiError(response.status, body);
   }
 
-  return response.json() as Promise<T>;
+  if (!body) {
+    return undefined as T;
+  }
+
+  return JSON.parse(body) as T;
 }
 
 export class ApiError extends Error {
@@ -89,13 +121,14 @@ export async function apiRefresh(
   });
 }
 
-export async function apiGoogleCallback(
+export async function apiOAuthCallback(
+  provider: OAuthProviderId,
   code: string,
   redirectUri: string,
 ): Promise<ExtensionLoginResponse> {
   return request<ExtensionLoginResponse>("/api/auth/extension/callback", {
     method: "POST",
-    body: JSON.stringify({ provider: "google", code, redirect_uri: redirectUri }),
+    body: JSON.stringify({ provider, code, redirect_uri: redirectUri }),
   });
 }
 

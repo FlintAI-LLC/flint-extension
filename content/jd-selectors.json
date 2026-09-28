@@ -1,6 +1,6 @@
 {
   "linkedin": {
-    "matches": ["/jobs/"],
+    "matches": ["linkedin.com"],
     "title": [
       ".job-details-jobs-unified-top-card__job-title h1",
       ".jobs-unified-top-card__job-title h1",
@@ -27,6 +27,12 @@
       "[data-test-job-description]",
       ".jobs-search__job-details--wrapper .jobs-description"
     ]
+  },
+  "my_greenhouse": {
+    "matches": ["my.greenhouse.io"],
+    "title": ["h1", "h2", "[data-testid='job-title']"],
+    "company": ["[data-testid='company-name']", "[class*='company-name']"],
+    "description": ["[data-testid='job-description']", "main article", "main"]
   },
   "greenhouse": {
     "matches": ["boards.greenhouse.io", "app.greenhouse.io"],

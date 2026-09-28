@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { waitForOAuthCodeInTab } from "../../src/oauthTab.js";
 import { buildExtensionOAuthRedirectUri } from "../../src/urls.js";
 
-const REDIRECT_URI = buildExtensionOAuthRedirectUri();
+const REDIRECT_URI = buildExtensionOAuthRedirectUri("google");
 
 type TabListener = (
   tabId: number,
@@ -125,5 +125,42 @@ describe("waitForOAuthCodeInTab", () => {
     );
 
     await expect(promise).rejects.toThrow("User denied");
+  });
+
+  it("uses the default 'Google' label when no error_description is present", async () => {
+    const promise = waitForOAuthCodeInTab(
+      "https://accounts.google.com/o/oauth2/v2/auth?client_id=x",
+      REDIRECT_URI,
+    );
+
+    emitTabRedirect(1, `${REDIRECT_URI}?error=access_denied`);
+
+    await expect(promise).rejects.toThrow("Google sign-in failed (access_denied)");
+  });
+
+  it("interpolates a provided providerLabel into the no-code error message", async () => {
+    const githubRedirectUri = buildExtensionOAuthRedirectUri("github");
+    const promise = waitForOAuthCodeInTab(
+      "https://github.com/login/oauth/authorize?client_id=x",
+      githubRedirectUri,
+      "GitHub",
+    );
+
+    emitTabRedirect(1, `${githubRedirectUri}?state=abc`);
+
+    await expect(promise).rejects.toThrow("No authorization code returned from GitHub");
+  });
+
+  it("interpolates a provided providerLabel into the generic error message", async () => {
+    const msRedirectUri = buildExtensionOAuthRedirectUri("microsoft");
+    const promise = waitForOAuthCodeInTab(
+      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=x",
+      msRedirectUri,
+      "Microsoft",
+    );
+
+    emitTabRedirect(1, `${msRedirectUri}?error=access_denied`);
+
+    await expect(promise).rejects.toThrow("Microsoft sign-in failed (access_denied)");
   });
 });
