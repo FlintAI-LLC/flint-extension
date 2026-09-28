@@ -2,7 +2,7 @@ import {
   ensureRefreshAlarmRegistered,
   getAccessTokenOrNull,
   handleRefreshAlarm,
-  loginWithGoogle,
+  loginWithProvider,
 } from "../src/auth.js";
 import {
   fetchAutofillPayload,
@@ -14,8 +14,8 @@ import { injectAndExpandFloatingPanel } from "../src/floatingPanelInject.js";
 import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { extractJobPostingFromHtml } from "../src/jdParse.js";
 import type {
-  GoogleLoginResult,
   InjectJdExtractorResult,
+  OAuthLoginResult,
   ParseJdFromUrlResult,
   PopupMessage,
 } from "../src/types.js";
@@ -220,45 +220,83 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
-    if (message.type !== "GOOGLE_LOGIN") return false;
+    if (message.type !== "OAUTH_LOGIN") return false;
+
+    const provider = message.provider;
 
     // Firefox also implements launchWebAuthFlow, so feature-detection on the
     // API surface returns the wrong answer. Detect via extension URL scheme:
     // chrome-extension:// for Chromium, moz-extension:// for Firefox.
     const isFirefox = chrome.runtime.getURL("/").startsWith("moz-extension://");
 
-    if (isFirefox) {
-      // Send { pending: true } synchronously so the popup's sendMessage callback
-      // gets a real response and stops retrying. We then return false (channel
-      // closed) — this is safe because sendResponse was already called before
-      // the async work starts, so Firefox never emits "Promised response went
-      // out of scope". The popup switches to its storage.onChanged listener to
-      // detect when auth completes.
-      const pendingResult: GoogleLoginResult = { success: false, error: "", pending: true };
+    // CRITICAL invariant: the popup that sent this OAUTH_LOGIN message can be
+    // destroyed before loginWithProvider() settles, for TWO independent
+    // reasons — either one means the synchronous sendResponse below is the
+    // only response channel the popup will ever see for this attempt:
+    //
+    //   (1) Firefox: a temporary add-on's "Promised response went out of
+    //       scope" behavior can tear down the message channel out from under
+    //       an in-flight async sendResponse, regardless of provider.
+    //   (2) Chrome, for github/microsoft specifically: src/auth.ts gates
+    //       chrome.identity on `provider === "google"`, so github/microsoft
+    //       ALWAYS take oauthTab.ts's `chrome.tabs.create({ url: authUrl })`
+    //       path (active tab by default), which steals focus and causes
+    //       Chrome to tear down the extension's own popup — even though this
+    //       is Chrome, not Firefox. Google-on-Chrome does not hit this
+    //       branch because chrome.identity.launchWebAuthFlow opens a
+    //       separate popup window, not a tab, so the extension popup
+    //       survives and can safely use the synchronous-result branch below.
+    //
+    // So the condition here is "isFirefox OR the tab-capture flow will be
+    // used" — i.e. every provider except Google-on-Chrome. Do NOT narrow
+    // this back to `if (isFirefox)`: that reintroduces a Chrome-only bug
+    // where github/microsoft failures (wrong client ID, redirect_uri_mismatch,
+    // backend 400/409) are silently swallowed because the popup that would
+    // receive the sendResponse is already gone.
+    //
+    // We send { pending: true } synchronously so the popup's sendMessage
+    // callback gets a real response and stops retrying, then return false
+    // (channel closed). This is safe because sendResponse was already
+    // called before the async work starts, so Firefox never emits
+    // "Promised response went out of scope". The popup switches to its
+    // storage.onChanged listener (keyed on sr_access_token / sr_oauth_error)
+    // to detect when auth completes — and, per the mount-time check in
+    // popup/Popup.tsx's _init(), also re-checks chrome.storage.local for a
+    // leftover sr_oauth_error on next popup open, in case the popup that
+    // registered that listener was the one that got destroyed.
+    if (isFirefox || provider !== "google") {
+      const pendingResult: OAuthLoginResult = {
+        success: false,
+        error: "",
+        provider,
+        pending: true,
+      };
       sendResponse(pendingResult);
 
-      loginWithGoogle()
+      loginWithProvider(provider)
         .then((): void => {
-          // Token was already saved to storage by loginWithGoogle() → saveAuth().
+          // Token was already saved to storage by loginWithProvider() → saveAuth().
           // The popup's onStorageChanged listener picks up sr_access_token.
         })
         .catch((err: unknown) => {
-          const raw = err instanceof Error ? err.message : "Google sign-in failed";
-          void chrome.storage.local.set({ sr_oauth_error: formatApiErrorMessage(raw, raw) });
+          const raw = err instanceof Error ? err.message : `${provider} sign-in failed`;
+          void chrome.storage.local.set({
+            sr_oauth_error: formatApiErrorMessage(raw, raw, provider),
+          });
         });
 
       return false;
     }
 
-    loginWithGoogle()
+    loginWithProvider(provider)
       .then((user): void => {
-        const result: GoogleLoginResult = { success: true, user };
+        const result: OAuthLoginResult = { success: true, user, provider };
         sendResponse(result);
       })
       .catch((err: unknown): void => {
-        const raw = err instanceof Error ? err.message : "Google sign-in failed";
-        const error = formatApiErrorMessage(raw, raw);
-        const result: GoogleLoginResult = { success: false, error };
+        const raw = err instanceof Error ? err.message : `${provider} sign-in failed`;
+        const error = formatApiErrorMessage(raw, raw, provider);
+        const result: OAuthLoginResult = { success: false, error, provider };
         sendResponse(result);
       });
 

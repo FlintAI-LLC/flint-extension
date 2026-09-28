@@ -1,6 +1,8 @@
 // Minimal chrome extension API stub for unit tests.
 // Only surfaces the APIs exercised in src/auth.ts and src/storage.ts.
 
+import { vi } from "vitest";
+
 const _store: Record<string, unknown> = {};
 const _sessionStore: Record<string, unknown> = {};
 const _alarms: Record<string, chrome.alarms.Alarm> = {};
@@ -113,6 +115,30 @@ const chromeMock: Partial<typeof chrome> = {
     lastError: undefined,
     getURL: (path: string) => `chrome-extension://fake-id/${path}`,
   } as unknown as typeof chrome.runtime,
+
+  // Regression guard for the locked architecture invariant: "GitHub and
+  // Microsoft must NEVER call chrome.identity, only Google may" (see
+  // src/auth.ts's useChromeIdentity gate). Before this mock existed, the
+  // chrome mock had no identity surface at all, so useChromeIdentity was
+  // always false in tests regardless of provider — deleting the
+  // `provider === "google" &&` guard in src/auth.ts would not have failed a
+  // single test. getRedirectURL/launchWebAuthFlow are real vi.fn()s so
+  // tests can assert on call counts (see tests/unit/auth.test.ts).
+  identity: {
+    getRedirectURL: vi.fn(() => "https://fakeextensionid.chromiumapp.org/"),
+    launchWebAuthFlow: vi.fn(),
+  } as unknown as typeof chrome.identity,
+
+  // Minimal stub so importing background/service-worker.ts (which calls
+  // chrome.action.onClicked.addListener at module top level) does not throw
+  // in tests.
+  action: {
+    onClicked: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      hasListener: () => false,
+    } as unknown as chrome.events.Event<(tab: chrome.tabs.Tab) => void>,
+  } as unknown as typeof chrome.action,
 };
 
 Object.defineProperty(globalThis, "chrome", {

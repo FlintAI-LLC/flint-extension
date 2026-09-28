@@ -57,7 +57,7 @@ Flint Apply account so you can run the tailoring wizard without copy-paste.
 | `scripting` | Inject JD extraction and autofill scripts on demand |
 | `alarms` | Refresh authentication tokens in the background |
 | `identity` | Google sign-in via Chrome identity API |
-| `tabs` / `webNavigation` | OAuth sign-in tab flow |
+| `tabs` / `webNavigation` | OAuth sign-in tab flow (Google on Firefox; GitHub and Microsoft on every browser) |
 
 ## Host permissions justification
 
@@ -73,6 +73,11 @@ Flint Apply account so you can run the tailoring wizard without copy-paste.
 
 - **TOTP not supported on extension login.** Users with two-factor authentication
   must sign in on the Flint Apply website or temporarily disable 2FA for extension login.
+- **GitHub and Microsoft sign-in open a sign-in tab** instead of the native Chrome
+  identity popup used for Google sign-in. GitHub OAuth Apps only support one
+  registered callback URL, so these providers redirect back to a Flint Apply web
+  page instead of a `chromiumapp.org` address; the tab closes automatically once
+  sign-in completes.
 - **Desktop interview prep** (`Prep in Flint`) is disabled until the separate
   Flint desktop app is publicly available.
 - **Autofill is beta** and best-effort on LinkedIn Easy Apply and some ATS variants.
