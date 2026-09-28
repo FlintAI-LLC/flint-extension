@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Flint Apply",
-  "version": "0.1.4",
+  "version": "0.1.29",
   "description": "Capture job postings and tailor your resume in Flint Apply.",
   "permissions": [
     "storage",
@@ -52,6 +52,17 @@
   },
   "content_scripts": [
     {
+      "matches": ["https://my.greenhouse.io/*"],
+      "js": ["content/my-greenhouse-network.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://my.greenhouse.io/*"],
+      "js": ["content/flint-click-guard.js"],
+      "run_at": "document_start"
+    },
+    {
       "matches": [
         "https://www.linkedin.com/jobs/*",
         "https://www.linkedin.com/jobs/*/*",
@@ -86,7 +97,8 @@
         "https://linkedin.com/jobs/*/*/*"
       ],
       "js": ["content/autofill-runner.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": [
@@ -122,6 +134,8 @@
         "icons/icon48.png"
       ],
       "matches": [
+        "https://flintapply.com/*",
+        "https://*.flintapply.com/*",
         "https://*.greenhouse.io/*",
         "https://jobs.lever.co/*",
         "https://*.lever.co/*",
@@ -133,7 +147,8 @@
         "https://jobright.ai/*",
         "https://www.jobright.ai/*",
         "https://www.linkedin.com/*",
-        "https://linkedin.com/*"
+        "https://linkedin.com/*",
+        "https://*/*"
       ]
     }
   ],

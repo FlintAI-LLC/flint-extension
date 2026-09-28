@@ -34,8 +34,14 @@ export interface AutofillPayload {
 export function computePercentFilled(fields: FieldFillOutcome[]): number {
   const applicable = fields.filter((f) => f.status !== "not_applicable_file_upload");
   if (applicable.length === 0) return 0;
-  const highConfidence = fields.filter((f) => f.status === "filled_high_confidence").length;
-  return Math.round((highConfidence / applicable.length) * 100);
+  const filled = applicable.filter(
+    (f) => f.status === "filled_high_confidence" || f.status === "filled_needs_review",
+  ).length;
+  return Math.round((filled / applicable.length) * 100);
+}
+
+export function countHighConfidenceFilled(fields: FieldFillOutcome[]): number {
+  return fields.filter((f) => f.status === "filled_high_confidence").length;
 }
 
 export function emptyFillResult(): FillResult {

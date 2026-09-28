@@ -8,6 +8,13 @@ export function formatApiErrorMessage(body: string, fallback: string): string {
     };
     const detail = parsed.detail;
     if (typeof detail === "object" && detail !== null) {
+      if (detail.code === "invalid_credentials") {
+        return (
+          "Invalid email or password for this Flint Apply server. " +
+          "If you sign in with Google on the website, use Sign in with Google here. " +
+          "Local staging (localhost:8001) has its own account database."
+        );
+      }
       if (detail.code === "totp_not_supported_on_extension") {
         return (
           "Two-factor authentication is not supported in the browser extension yet. " +

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillForPayload } from "../../content/autofill/controller.js";
+import { fillForPayload } from "../../content/autofill/fill-router.js";
 import { detectApplicationForm } from "../../content/autofill/detector.js";
 import type { AutofillPayload } from "../../content/autofill/types.js";
 

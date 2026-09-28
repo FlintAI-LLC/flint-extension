@@ -297,6 +297,12 @@ export function finalizeJdText(text: string): string {
   return truncateJdText(polishStructuredJdText(stripJobAggregatorNoise(cleanJdText(text))));
 }
 
+/** Strip HTML tags when boards-api or DOM capture returns markup. */
+export function finalizeJdTextFromMaybeHtml(text: string): string {
+  const input = /<[a-z][\s\S]*>/i.test(text) ? stripHtml(text) : text;
+  return finalizeJdText(input);
+}
+
 export function cleanJdText(text: string): string {
   let cleaned = sanitizeText(text);
   const noisy =

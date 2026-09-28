@@ -4,7 +4,12 @@
  * and listens for EXPAND_FLOATING_PANEL messages sent by the background
  * service worker when the toolbar action is clicked.
  */
+import { installFlintUiClickGuard } from "../../src/extensionClickIsolation.js";
+import { installMyGreenhouseUiReparentObserver } from "../../src/myGreenhouseUiMount.js";
 import { FloatingShell } from "./shell.js";
+
+installFlintUiClickGuard();
+installMyGreenhouseUiReparentObserver();
 
 declare global {
   interface Window {

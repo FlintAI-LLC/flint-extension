@@ -4,6 +4,7 @@ import {
   extractJobPostingFromHtml,
   extractUkgOpportunityFromHtml,
   finalizeJdText,
+  finalizeJdTextFromMaybeHtml,
   isJobAggregatorNoise,
   isUkgRecruitingHost,
   pickBetterJd,
@@ -246,5 +247,16 @@ describe("UKG opportunity parsing", () => {
     const parsed = extractJobPostingFromHtml(ukgHtml);
     expect(parsed?.title).toContain("Senior Director");
     expect(parsed?.company).toBe("One Inc");
+  });
+});
+
+describe("finalizeJdTextFromMaybeHtml", () => {
+  it("strips HTML tags from boards-api style content", () => {
+    const text = finalizeJdTextFromMaybeHtml(
+      "<p>Build <strong>automated tests</strong>.</p><ul><li>Regression</li></ul>",
+    );
+    expect(text).not.toContain("<p>");
+    expect(text).toContain("automated tests");
+    expect(text).toContain("Regression");
   });
 });

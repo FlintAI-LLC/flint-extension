@@ -4,7 +4,7 @@ import selectorsConfig from "./selectors.json";
 import { FIELD_KEY_TO_CONCEPT } from "./detector.js";
 import type { FieldCandidate, Platform } from "./detector.js";
 import {
-  querySelectorSafe,
+  querySelectorDeep,
   setSelectByVisibleText,
   setTextControlValue,
 } from "./fill-utils.js";
@@ -59,18 +59,18 @@ function resolveElement(
 ): { el: Element | null; matchSource: MatchSource } {
   const mapped = selectorForKey(platform, key);
   if (mapped) {
-    const el = querySelectorSafe(root, mapped);
+    const el = querySelectorDeep(root, mapped);
     if (el) return { el, matchSource: "selector_map" };
   }
 
   if (payloadSelector) {
-    const el = querySelectorSafe(root, payloadSelector);
+    const el = querySelectorDeep(root, payloadSelector);
     if (el) return { el, matchSource: "payload" };
   }
 
   const heuristic = candidateSelectorForKey(candidates, key);
   if (heuristic) {
-    const el = querySelectorSafe(root, heuristic);
+    const el = querySelectorDeep(root, heuristic);
     if (el) return { el, matchSource: "heuristic" };
   }
 

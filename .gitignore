@@ -10,3 +10,4 @@ test-results/
 key.pem
 *.pem
 web-ext-artifacts/
+*.zip

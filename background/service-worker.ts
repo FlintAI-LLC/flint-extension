@@ -107,6 +107,41 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    if (message.type === "FETCH_JSON") {
+      let fetchUrl: URL;
+      try {
+        fetchUrl = new URL(message.url);
+      } catch {
+        sendResponse({ error: "Invalid URL" });
+        return true;
+      }
+      if (fetchUrl.protocol !== "https:" || fetchUrl.hostname !== "boards-api.greenhouse.io") {
+        sendResponse({ error: "URL not allowlisted" });
+        return true;
+      }
+
+      _fetchWithTimeout(message.url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            sendResponse({ error: `HTTP ${response.status}` });
+            return;
+          }
+          const json = (await response.json()) as Record<string, unknown>;
+          sendResponse({ json });
+        })
+        .catch((err: unknown) => {
+          const error = err instanceof Error ? err.message : "Fetch failed";
+          sendResponse({ error });
+        });
+      return true;
+    }
+
     if (message.type === "OPEN_FLINT_DEEP_LINK") {
       if (!FLINT_DESKTOP_HANDOFF_ENABLED) {
         sendResponse({ ok: false, error: "Desktop handoff disabled" });
@@ -120,18 +155,24 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message.type === "INJECT_JD_EXTRACTOR") {
-      chrome.scripting
-        .executeScript({
-          target: { tabId: message.tabId },
-          files: ["content/jd-extractor.js"],
-        })
-        .then(() => {
+      chrome.tabs.sendMessage(message.tabId, { type: "JD_EXTRACTOR_PING" }, (ping) => {
+        if (!chrome.runtime.lastError && ping && (ping as { ok?: boolean }).ok) {
           sendResponse({ ok: true } satisfies InjectJdExtractorResult);
-        })
-        .catch((err: unknown) => {
-          const error = err instanceof Error ? err.message : "Script injection failed";
-          sendResponse({ ok: false, error } satisfies InjectJdExtractorResult);
-        });
+          return;
+        }
+        chrome.scripting
+          .executeScript({
+            target: { tabId: message.tabId },
+            files: ["content/jd-extractor.js"],
+          })
+          .then(() => {
+            sendResponse({ ok: true } satisfies InjectJdExtractorResult);
+          })
+          .catch((err: unknown) => {
+            const error = err instanceof Error ? err.message : "Script injection failed";
+            sendResponse({ ok: false, error } satisfies InjectJdExtractorResult);
+          });
+      });
       return true;
     }
 

@@ -7,17 +7,31 @@ import type {
 } from "../src/types.js";
 import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { getAccessTokenOrNull, login, logout } from "../src/auth.js";
-import { apiSaveJD } from "../src/api.js";
+import { ApiError, apiSaveJD } from "../src/api.js";
 import { buildTailorInFlintApplyUrl, getGoogleClientId } from "../src/urls.js";
 import { PRODUCT_NAME, FLINT_DESKTOP_NAME, FLINT_DESKTOP_HANDOFF_ENABLED } from "../src/brand.js";
 import { PopupHeader } from "./BrandWordmark.js";
 import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import {
   isMyGreenhouseHost,
+  isMyGreenhousePartialExtract,
   sanitizeMyGreenhouseExtractedFields,
 } from "../src/myGreenhouseExtract.js";
+import { extensionInvalidatedMessage, isExtensionContextValid } from "../src/extensionContext.js";
+import { getExtensionVersion } from "../src/extensionVersion.js";
+import { resolveHostTab } from "../src/resolveHostTab.js";
+import { FLINT_JD_REFRESH_EVENT } from "../src/panelMessages.js";
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
-import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
+import {
+  pickBetterJd,
+  scoreJdText,
+  finalizeJdText,
+  finalizeJdTextFromMaybeHtml,
+  extractJobPostingFromHtml,
+  JD_MAX_CHARS,
+  JD_MIN_LENGTH,
+  truncateJdText,
+} from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
 import { isAutofillEnabled, isAutofillHost, isLinkedInHost } from "../src/autofillFlags.js";
 
@@ -73,6 +87,7 @@ const FETCH_HEADERS = {
 
 const FETCH_TIMEOUT_MS = 4000;
 const EXTRACTION_TIMEOUT_MS = 7000;
+const MY_GREENHOUSE_POPUP_TIMEOUT_MS = 16_000;
 
 function _withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise<T>((resolve) => {
@@ -163,15 +178,38 @@ async function _injectJdExtractor(tabId: number): Promise<void> {
   });
 }
 
-async function _extractJdFromTab(tabId: number): Promise<ExtractedJD | null> {
+function isUsableExtractedJd(jd: ExtractedJD, tabUrl?: string): boolean {
+  if (jd.text.length >= 200) return true;
+  if (!tabUrl) return false;
+  try {
+    if (!isMyGreenhouseHost(new URL(tabUrl).hostname)) return false;
+  } catch {
+    return false;
+  }
+  return isMyGreenhousePartialExtract(jd);
+}
+
+async function _extractJdFromTab(tabId: number, tabUrl?: string): Promise<ExtractedJD | null> {
   await _injectJdExtractor(tabId);
 
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const myGreenhouseTab = (() => {
+    if (!tabUrl) return false;
+    try {
+      return isMyGreenhouseHost(new URL(tabUrl).hostname);
+    } catch {
+      return false;
+    }
+  })();
+  const maxAttempts = myGreenhouseTab ? 12 : 5;
+  const retryDelayMs = myGreenhouseTab ? 500 : 120;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await new Promise<{ type: string; jd?: ExtractedJD; error?: string }>(
       (resolve) => {
         chrome.tabs.sendMessage(tabId, { type: "EXTRACT_JD" }, (msg) => {
           if (chrome.runtime.lastError || !msg) {
-            resolve({ type: "JD_ERROR", error: chrome.runtime.lastError?.message ?? "No response" });
+            const err = chrome.runtime.lastError?.message ?? "No response";
+            resolve({ type: "JD_ERROR", error: err });
           } else {
             resolve(msg);
           }
@@ -179,12 +217,23 @@ async function _extractJdFromTab(tabId: number): Promise<ExtractedJD | null> {
       },
     );
 
-    if (response.type === "JD_RESULT" && response.jd && response.jd.text.length >= 200) {
-      return response.jd;
+    if (response.type === "JD_RESULT" && response.jd) {
+      if (isUsableExtractedJd(response.jd, tabUrl)) {
+        return response.jd;
+      }
+      if (attempt === maxAttempts - 1 && tabUrl) {
+        try {
+          if (isMyGreenhouseHost(new URL(tabUrl).hostname) && isMyGreenhousePartialExtract(response.jd)) {
+            return response.jd;
+          }
+        } catch {
+          // ignore invalid tab URL
+        }
+      }
     }
 
-    if (attempt < 4) {
-      await new Promise((r) => setTimeout(r, 120 * (attempt + 1)));
+    if (attempt < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, retryDelayMs * (attempt + 1)));
     }
   }
   return null;
@@ -233,6 +282,8 @@ export function Popup(): React.ReactElement {
   const [loadingStatus, setLoadingStatus] = useState<string>("Detecting job description…");
   const [autofillEnabled, setAutofillEnabled] = useState(true);
   const [autofillHint, setAutofillHint] = useState<string | null>(null);
+  const extractJdRef = useRef<() => Promise<void>>(async () => {});
+  const manualEntryReturnRef = useRef<View>("not_on_job");
 
   useEffect(() => {
     void _init();
@@ -242,11 +293,32 @@ export function Popup(): React.ReactElement {
     };
   }, []);
 
+  useEffect(() => {
+    const onRefresh = (_event: Event) => {
+      void (async () => {
+        const token = await getAccessTokenOrNull();
+        if (!token) return;
+        setJd(null);
+        setSavedJdId(null);
+        setView("loading");
+        setLoadingStatus("Reading the job posting…");
+        await extractJdRef.current();
+      })();
+    };
+    window.addEventListener(FLINT_JD_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(FLINT_JD_REFRESH_EVENT, onRefresh);
+  }, []);
+
   async function _init(): Promise<void> {
+    if (!isExtensionContextValid()) {
+      setErrorMessage(extensionInvalidatedMessage());
+      setView("error");
+      return;
+    }
+
     // Watchdog: if anything in _init hangs (auth refresh, executeScript on a
     // sandboxed page, etc.), force a transition out of the spinner so the
-    // user can either log in or paste manually. 12 s gives the 7 s extraction
-    // budget room plus auth refresh headroom.
+    // user can either log in or paste manually.
     initWatchdogRef.current = setTimeout(() => {
       setView((prev) =>
         prev === "loading"
@@ -256,7 +328,7 @@ export function Popup(): React.ReactElement {
       setNotOnJobMessage(
         "Detection took too long. Paste the job description manually below.",
       );
-    }, 12_000);
+    }, 20_000);
 
     try {
       setLoadingStatus("Checking your session…");
@@ -284,7 +356,7 @@ export function Popup(): React.ReactElement {
   }
 
   async function _extractJD(): Promise<void> {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await resolveHostTab();
     setTabUrl(tab?.url);
     if (!tab?.id) {
       setNotOnJobMessage(null);
@@ -308,19 +380,35 @@ export function Popup(): React.ReactElement {
       ? isLinkedInJobPage(tab.url) || isMyGreenhouseHost(new URL(tab.url).hostname)
       : false;
 
-    const [directParsed, swParsed, pageJd] = await _withTimeout(
+    const extractTimeoutMs =
+      tab.url && isMyGreenhouseHost(new URL(tab.url).hostname)
+        ? MY_GREENHOUSE_POPUP_TIMEOUT_MS
+        : EXTRACTION_TIMEOUT_MS;
+    const extractFallback = [null, null, null] as [
+      { title: string; company: string; text: string } | null,
+      { title: string; company: string; text: string } | null,
+      ExtractedJD | null,
+    ];
+    const extractResults = await new Promise<typeof extractFallback>((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(extractFallback);
+      }, extractTimeoutMs);
       Promise.all([
         !skipHtmlFetch && fetchUrl ? _parseJdFromUrlDirect(fetchUrl) : Promise.resolve(null),
         !skipHtmlFetch && fetchUrl ? _parseJdFromUrlViaServiceWorker(fetchUrl) : Promise.resolve(null),
-        _extractJdFromTab(tab.id),
-      ]),
-      EXTRACTION_TIMEOUT_MS,
-      [null, null, null] as [
-        { title: string; company: string; text: string } | null,
-        { title: string; company: string; text: string } | null,
-        ExtractedJD | null,
-      ],
-    );
+        _extractJdFromTab(tab.id, tab.url),
+      ]).then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        () => {
+          clearTimeout(timer);
+          resolve(extractFallback);
+        },
+      );
+    });
+    const [directParsed, swParsed, pageJd] = extractResults;
 
     const structuredParsed = directParsed ?? swParsed;
 
@@ -385,39 +473,84 @@ export function Popup(): React.ReactElement {
       });
       setNotOnJobMessage(null);
       setView("job_ready");
+    } else if (
+      myGreenhouseTab &&
+      pageJd &&
+      isMyGreenhousePartialExtract(pageJd)
+    ) {
+      const ghFields = sanitizeMyGreenhouseExtractedFields(pageJd.title, pageJd.company);
+      setManualTitle(ghFields.title);
+      setManualCompany(ghFields.company);
+      setManualText("");
+      setManualError(null);
+      setNotOnJobMessage(
+        `Found ${ghFields.title} at ${ghFields.company}. Paste the full job description below — MyGreenhouse keeps the posting inside a flex panel, so auto-capture often needs the text copied from the detail pane.`,
+      );
+      setView("manual_entry");
     } else {
       setNotOnJobMessage(
         tab.url && isLinkedInJobPage(tab.url)
           ? "Could not read this LinkedIn job yet. Select a job in the list, wait for the description to load, then reopen the extension."
           : tab.url && isMyGreenhouseHost(new URL(tab.url).hostname)
-            ? "Could not read this MyGreenhouse job yet. Click a job in the list so the full posting is visible, then reopen the extension."
+            ? "Could not read this MyGreenhouse job yet. Click a job in the list so the full posting is visible, then use Paste job description."
             : null,
       );
       setView("not_on_job");
     }
   }
+  extractJdRef.current = _extractJD;
 
-  function handleOpenManualEntry(): void {
-    setManualTitle("");
-    setManualCompany("");
-    setManualText("");
-    setManualError(null);
+  function handleOpenManualEntry(options?: {
+    prefillFromCaptured?: boolean;
+    returnToSaved?: boolean;
+  }): void {
+    if ((options?.prefillFromCaptured || options?.returnToSaved) && jd) {
+      setManualTitle(jd.title || "");
+      setManualCompany(jd.company || "");
+      setManualText("");
+      setManualError(null);
+      setNotOnJobMessage(
+        options.returnToSaved
+          ? "Wrong job description saved? Paste the correct text below, then save again."
+          : "We got the wrong job description? Paste the full posting from the detail pane below, then save.",
+      );
+      manualEntryReturnRef.current = options.returnToSaved ? "saved" : "job_ready";
+    } else {
+      setManualTitle("");
+      setManualCompany("");
+      setManualText("");
+      setManualError(null);
+      setNotOnJobMessage(null);
+      manualEntryReturnRef.current = "not_on_job";
+    }
     setView("manual_entry");
   }
 
   function handleManualSubmit(): void {
-    if (manualText.trim().length < 200) {
-      setManualError("Paste at least 200 characters of job description text.");
+    const trimmedLen = manualText.trim().length;
+    if (trimmedLen < JD_MIN_LENGTH) {
+      setManualError(`Paste at least ${JD_MIN_LENGTH} characters of job description text.`);
+      return;
+    }
+    if (trimmedLen > JD_MAX_CHARS) {
+      setManualError(
+        `Job description exceeds ${JD_MAX_CHARS.toLocaleString()} characters. Paste only the requirements section.`,
+      );
       return;
     }
     setManualError(null);
-    setJd({
+    const nextJd: ExtractedJD = {
       title: manualTitle.trim() || "Untitled Role",
       company: manualCompany.trim(),
-      text: manualText.trim(),
-      url: tabUrl ?? "",
+      text: finalizeJdTextFromMaybeHtml(manualText.trim()),
+      url: tabUrl ?? jd?.url ?? "",
       extraction_method: "heuristic",
-    });
+    };
+    setJd(nextJd);
+    if (manualEntryReturnRef.current === "saved") {
+      void persistSavedJd(nextJd);
+      return;
+    }
     setView("job_ready");
   }
 
@@ -485,6 +618,10 @@ export function Popup(): React.ReactElement {
       setView("loading");
       await _extractJD();
     } catch (err) {
+      if (err instanceof ApiError) {
+        setLoginError(formatApiErrorMessage(err.message, "Login failed"));
+        return;
+      }
       const raw = err instanceof Error ? err.message : "Login failed";
       setLoginError(formatApiErrorMessage(raw, raw));
     }
@@ -496,8 +633,7 @@ export function Popup(): React.ReactElement {
     setJd(null);
   }
 
-  async function handleSaveJD(): Promise<void> {
-    if (!jd) return;
+  async function persistSavedJd(nextJd: ExtractedJD): Promise<void> {
     const token = await getAccessTokenOrNull();
     if (!token) {
       setView("login");
@@ -508,14 +644,15 @@ export function Popup(): React.ReactElement {
     try {
       const result = await apiSaveJD(
         {
-          url: jd.url,
-          title: jd.title,
-          company: jd.company,
-          text: jd.text,
+          url: nextJd.url,
+          title: nextJd.title,
+          company: nextJd.company,
+          text: finalizeJdTextFromMaybeHtml(nextJd.text),
           source: "extension",
         },
         token,
       );
+      setJd(nextJd);
       setSavedJdId(result.jd_id);
       setSavedExportToken(result.export_token);
       setView("saved");
@@ -523,6 +660,11 @@ export function Popup(): React.ReactElement {
       setErrorMessage(err instanceof Error ? err.message : "Save failed");
       setView("error");
     }
+  }
+
+  async function handleSaveJD(): Promise<void> {
+    if (!jd) return;
+    await persistSavedJd(jd);
   }
 
   function handleTailorInFlintApply(): void {
@@ -588,6 +730,10 @@ export function Popup(): React.ReactElement {
             setAutofillHint("Open the application form page, then try Autofill again.");
           } else if (response?.error === "Autofill disabled") {
             setAutofillHint("Autofill is turned off for this extension install.");
+          } else if (response?.error === "no_sessions") {
+            setAutofillHint("Tailor your resume in Flint Apply first, then try Autofill again.");
+          } else if (response?.error === "dismissed") {
+            setAutofillHint("Autofill was dismissed on this page — reload the tab, then try again.");
           }
           resolve();
         },
@@ -627,6 +773,7 @@ export function Popup(): React.ReactElement {
   if (view === "loading") {
     return (
       <div className="popup">
+        <p className="ext-version ext-version-corner">v{getExtensionVersion()}</p>
         <div className="spinner" aria-label="Loading" />
         <p className="hint hint-compact">{loadingStatus}</p>
       </div>
@@ -705,13 +852,25 @@ export function Popup(): React.ReactElement {
   }
 
   if (view === "manual_entry") {
+    const manualLen = manualText.trim().length;
+    const manualOverMax = manualLen > JD_MAX_CHARS;
+    const manualUnderMin = manualLen < JD_MIN_LENGTH;
+    const manualReturnsToSaved = manualEntryReturnRef.current === "saved";
+
     return (
       <div className="popup">
         <PopupHeader>
-          <button className="btn-ghost" onClick={() => setView("not_on_job")}>
+          <button
+            className="btn-ghost"
+            onClick={() => {
+              setNotOnJobMessage(null);
+              setView(manualEntryReturnRef.current);
+            }}
+          >
             Back
           </button>
         </PopupHeader>
+        {notOnJobMessage && <p className="hint">{notOnJobMessage}</p>}
         <div className="manual-form">
           <label>
             Job title (optional)
@@ -739,8 +898,13 @@ export function Popup(): React.ReactElement {
               placeholder="Paste the full job description here…"
               rows={6}
             />
-            <span className={`char-count${manualText.trim().length < 200 && manualText.length > 0 ? " warn" : ""}`}>
-              {manualText.trim().length} / 200 min chars
+            <span
+              className={`char-count${
+                manualUnderMin && manualText.length > 0 ? " warn" : ""
+              }${manualOverMax ? " over" : ""}`}
+            >
+              {manualLen.toLocaleString()} / {JD_MAX_CHARS.toLocaleString()}
+              {manualUnderMin ? ` (${JD_MIN_LENGTH} min)` : ""}
             </span>
           </label>
           {manualError && <p className="error-text">{manualError}</p>}
@@ -748,9 +912,9 @@ export function Popup(): React.ReactElement {
         <button
           className="btn-primary"
           onClick={handleManualSubmit}
-          disabled={manualText.trim().length < 200}
+          disabled={manualUnderMin || manualOverMax}
         >
-          Use this job description
+          {manualReturnsToSaved ? "Save corrected description" : "Use this job description"}
         </button>
       </div>
     );
@@ -771,6 +935,15 @@ export function Popup(): React.ReactElement {
         </div>
         <button className="btn-primary" onClick={() => void handleSaveJD()}>
           Save job
+        </button>
+        <p className="hint hint-compact">
+          We got the wrong job description? Paste it yourself before saving.
+        </p>
+        <button
+          className="btn-secondary"
+          onClick={() => handleOpenManualEntry({ prefillFromCaptured: true })}
+        >
+          Paste job description
         </button>
       </div>
     );
@@ -795,6 +968,15 @@ export function Popup(): React.ReactElement {
         </div>
         <button className="btn-primary" onClick={handleTailorInFlintApply}>
           Tailor in {PRODUCT_NAME}
+        </button>
+        <p className="hint hint-compact">
+          Wrong job description? Paste the correct text and save again.
+        </p>
+        <button
+          className="btn-secondary"
+          onClick={() => handleOpenManualEntry({ returnToSaved: true })}
+        >
+          Paste job description
         </button>
         {renderAutofillButton()}
         {autofillHint && <p className="hint hint-compact">{autofillHint}</p>}

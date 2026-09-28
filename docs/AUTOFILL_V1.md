@@ -95,7 +95,7 @@ Authorization: Bearer {sr_jwt}
 | `fields[].status` | `filled_high_confidence` (map/payload match), `filled_needs_review` (heuristic), `not_found`, `not_applicable_file_upload` |
 | `fields[].selector` | Selector used or attempted |
 | `fields[].value_preview` | Truncated value written (when filled) |
-| `percent_filled` | Share of applicable fields filled at high confidence |
+| `percent_filled` | Share of applicable fields filled (high confidence or needs review) |
 
 ## Security
 
@@ -109,3 +109,5 @@ Authorization: Bearer {sr_jwt}
 2. Capture HTML fixtures → expand Playwright e2e coverage beyond Greenhouse + generic.
 3. Dedicated LinkedIn Easy Apply modal support remains a separate user gate if heuristics prove insufficient.
 4. Keep popup + overlay copy host-agnostic as runner matches grow.
+5. **Application profile (Flint Apply):** collect reusable answers (work authorization, visa sponsorship, earliest start date, salary expectations, veteran/disability EEO, “how did you hear about us”) during tailor/wizard and include them in `autofill-payload`. Greenhouse custom questions use dynamic `job_application[answers][id]` selectors — match by label text client-side.
+6. **MyGreenhouse embed:** autofill-runner uses `all_frames: true`; top frame broadcasts fill to `job-boards.greenhouse.io` embed iframes via `postMessage`.

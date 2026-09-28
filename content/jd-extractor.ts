@@ -8,13 +8,29 @@ import {
 import { resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import {
   extractMyGreenhouseFromDocument,
+  findListCardFromClickEvent,
+  findSelectedJobListItem,
+  findVisibleJobHeaderFromDetailPane,
   isMyGreenhouseHost,
+  isPlausibleJobHeader,
+  resolveMyGreenhouseSelection,
   sanitizeMyGreenhouseExtractedFields,
 } from "../src/myGreenhouseExtract.js";
+import { clearMyGreenhouseNetworkJobCache } from "../src/myGreenhouseBoardsApi.js";
+import { extractMyGreenhouseViaBoardsApi } from "../src/myGreenhouseBoardsApi.js";
+import {
+  clearLegacyMyGreenhouseJobContext,
+  writeListClickMyGreenhouseJobContext,
+} from "../src/myGreenhouseContext.js";
+import {
+  FLINT_CONTENT_SOURCE,
+  FLINT_MYGH_JOB_CHANGED,
+} from "../src/panelMessages.js";
 import selectorsConfig from "./jd-selectors.json";
 
 const HEURISTIC_MIN_LENGTH = 200;
 const EXTRACTION_TIMEOUT_MS = 5000;
+const MY_GREENHOUSE_EXTRACTION_TIMEOUT_MS = 12_000;
 
 const GENERIC_DESCRIPTION_SELECTORS = [
   ".job-description",
@@ -305,26 +321,78 @@ async function _extractJDInner(): Promise<ExtractedJD> {
   const config: SelectorsConfig = selectorsConfig;
 
   if (isMyGreenhouseHost(window.location.hostname)) {
+    const boardsApiJob = await extractMyGreenhouseViaBoardsApi(document);
+    if (boardsApiJob && boardsApiJob.text.length >= HEURISTIC_MIN_LENGTH) {
+      const selected = resolveMyGreenhouseSelection(document);
+      let { title, company } = sanitizeMyGreenhouseExtractedFields(
+        boardsApiJob.title,
+        boardsApiJob.company,
+      );
+      if (
+        !isPlausibleJobHeader(title, company) &&
+        selected &&
+        isPlausibleJobHeader(selected.title, selected.company)
+      ) {
+        ({ title, company } = sanitizeMyGreenhouseExtractedFields(
+          selected.title,
+          selected.company,
+        ));
+      }
+      return {
+        title,
+        company,
+        text: boardsApiJob.text,
+        url: boardsApiJob.absoluteUrl || window.location.href,
+        extraction_method: "structured",
+      };
+    }
+
     const myGh = extractMyGreenhouseFromDocument(document);
-    if (myGh && myGh.text.length >= HEURISTIC_MIN_LENGTH) {
+    if (myGh) {
       const { title, company } = sanitizeMyGreenhouseExtractedFields(
         myGh.title,
         myGh.company,
       );
+      if (myGh.text.length >= HEURISTIC_MIN_LENGTH) {
+        return {
+          title,
+          company,
+          text: myGh.text,
+          url: window.location.href,
+          extraction_method: "structured",
+        };
+      }
+      if (title && company) {
+        return {
+          title,
+          company,
+          text: "",
+          url: window.location.href,
+          extraction_method: "heuristic",
+        };
+      }
+    }
+    const header = resolveMyGreenhouseSelection(document);
+    if (header?.title && header.company) {
+      const { title, company } = sanitizeMyGreenhouseExtractedFields(
+        header.title,
+        header.company,
+      );
       return {
         title,
         company,
-        text: myGh.text,
+        text: "",
         url: window.location.href,
-        extraction_method: "structured",
+        extraction_method: "heuristic" as const,
       };
     }
+
     return {
       title: "",
       company: "",
       text: "",
       url: window.location.href,
-      extraction_method: "heuristic",
+      extraction_method: "heuristic" as const,
     };
   }
 
@@ -441,23 +509,125 @@ async function _extractJDInner(): Promise<ExtractedJD> {
   };
 }
 
+let extractInFlight: Promise<ExtractedJD> | null = null;
+
 function extractJD(): Promise<ExtractedJD> {
-  return withTimeout(_extractJDInner(), EXTRACTION_TIMEOUT_MS);
+  if (extractInFlight) return extractInFlight;
+
+  const timeoutMs = isMyGreenhouseHost(window.location.hostname)
+    ? MY_GREENHOUSE_EXTRACTION_TIMEOUT_MS
+    : EXTRACTION_TIMEOUT_MS;
+  extractInFlight = withTimeout(_extractJDInner(), timeoutMs).finally(() => {
+    extractInFlight = null;
+  });
+  return extractInFlight;
 }
 
-chrome.runtime.onMessage.addListener(
-  (message: PopupMessage, _sender, sendResponse) => {
-    if (message.type !== "EXTRACT_JD") return false;
+const JD_EXTRACTOR_BOOTSTRAP_ATTR = "data-flint-jd-extractor";
+const MYGH_WATCHER_ATTR = "data-flint-mygh-watcher";
+const MYGH_EMIT_MIN_INTERVAL_MS = 1_000;
+const MYGH_MUTATION_DEBOUNCE_MS = 600;
 
-    extractJD()
-      .then((jd) => {
-        sendResponse({ type: "JD_RESULT", jd } as PopupMessage);
-      })
-      .catch((err: unknown) => {
-        const error = err instanceof Error ? err.message : "Extraction failed";
-        sendResponse({ type: "JD_ERROR", error } as PopupMessage);
+function installMyGreenhouseJobWatcher(): void {
+  if (!isMyGreenhouseHost(window.location.hostname)) return;
+  if (document.documentElement.hasAttribute(MYGH_WATCHER_ATTR)) return;
+  document.documentElement.setAttribute(MYGH_WATCHER_ATTR, "1");
+
+  clearLegacyMyGreenhouseJobContext();
+
+  let lastKey = "";
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastEmitAt = 0;
+
+  const postJobChanged = (key: string): void => {
+    window.postMessage(
+      { type: FLINT_MYGH_JOB_CHANGED, source: FLINT_CONTENT_SOURCE, key },
+      window.location.origin,
+    );
+  };
+
+  const emitIfChanged = (): void => {
+    const now = Date.now();
+    if (now - lastEmitAt < MYGH_EMIT_MIN_INTERVAL_MS) return;
+
+    const selected = resolveMyGreenhouseSelection(document);
+    if (!selected || !isPlausibleJobHeader(selected.title, selected.company)) return;
+
+    const key = `${selected.title}\0${selected.company}`;
+    if (key === lastKey) return;
+
+    clearMyGreenhouseNetworkJobCache();
+    lastKey = key;
+    lastEmitAt = now;
+    postJobChanged(key);
+  };
+
+  const scheduleCheck = (): void => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(emitIfChanged, MYGH_MUTATION_DEBOUNCE_MS);
+  };
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const card = findListCardFromClickEvent(event, document);
+      if (!card || !isPlausibleJobHeader(card.title, card.company)) return;
+      writeListClickMyGreenhouseJobContext({
+        title: card.title,
+        company: card.company,
       });
+      const clickKey = `${card.title}\0${card.company}`;
+      clearMyGreenhouseNetworkJobCache();
+      if (clickKey !== lastKey) {
+        lastKey = clickKey;
+      }
+      lastEmitAt = 0;
+      // Notify the floating shell immediately so the drawer collapses even when
+      // the detail pane has not finished loading (mutation path may dedupe).
+      postJobChanged(clickKey);
+      scheduleCheck();
+    },
+    true,
+  );
 
-    return true;
-  },
-);
+  const observer = new MutationObserver(scheduleCheck);
+  const startObserver = (): void => {
+    if (!document.body) return;
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+    });
+  };
+  if (document.body) startObserver();
+  else document.addEventListener("DOMContentLoaded", startObserver, { once: true });
+}
+
+function bootstrapJdExtractorContentScript(): void {
+  if (document.documentElement.hasAttribute(JD_EXTRACTOR_BOOTSTRAP_ATTR)) return;
+  document.documentElement.setAttribute(JD_EXTRACTOR_BOOTSTRAP_ATTR, "1");
+
+  chrome.runtime.onMessage.addListener(
+    (message: PopupMessage, _sender, sendResponse) => {
+      if (message.type === "JD_EXTRACTOR_PING") {
+        sendResponse({ ok: true });
+        return true;
+      }
+      if (message.type !== "EXTRACT_JD") return false;
+
+      extractJD()
+        .then((jd) => {
+          sendResponse({ type: "JD_RESULT", jd } as PopupMessage);
+        })
+        .catch((err: unknown) => {
+          const error = err instanceof Error ? err.message : "Extraction failed";
+          sendResponse({ type: "JD_ERROR", error } as PopupMessage);
+        });
+
+      return true;
+    },
+  );
+
+  installMyGreenhouseJobWatcher();
+}
+
+bootstrapJdExtractorContentScript();

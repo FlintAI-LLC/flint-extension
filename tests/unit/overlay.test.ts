@@ -20,9 +20,6 @@ describe("AutofillOverlay", () => {
 
   afterEach(() => {
     document.body.innerHTML = "";
-    document.head.querySelectorAll("style").forEach((el) => {
-      if (el.textContent?.includes("flint-autofill-field-highlight")) el.remove();
-    });
   });
 
   it("shows offer state and confirms autofill", () => {
@@ -85,8 +82,7 @@ describe("AutofillOverlay", () => {
     jumpButton.click();
 
     const emailInput = document.querySelector("[name='job_application[email]']") as HTMLElement;
-    expect(emailInput.classList.contains("flint-autofill-field-highlight")).toBe(true);
-    expect(document.activeElement).not.toBe(emailInput);
+    expect(document.activeElement).toBe(emailInput);
   });
 
   it("shows picker state and forwards session selection", () => {

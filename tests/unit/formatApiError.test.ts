@@ -12,6 +12,15 @@ describe("formatApiErrorMessage", () => {
     expect(message).toContain("Flint Apply website");
   });
 
+  it("maps invalid_credentials to a login-specific message", () => {
+    const message = formatApiErrorMessage(
+      JSON.stringify({ detail: { code: "invalid_credentials" } }),
+      "Session expired — please log in again.",
+    );
+    expect(message).toContain("Invalid email or password");
+    expect(message).not.toContain("Session expired");
+  });
+
   it("uses the configured web app URL for OAuth redirect help", () => {
     const callback = buildExtensionOAuthRedirectUri();
     const message = formatApiErrorMessage(

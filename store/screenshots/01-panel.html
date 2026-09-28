@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Flint Apply store screenshot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 1280px; height: 800px; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #e8edf3;
+      color: #1a1a2e;
+    }
+    .chrome {
+      display: flex;
+      flex-direction: column;
+      height: 800px;
+    }
+    .bar {
+      height: 52px;
+      background: #fff;
+      border-bottom: 1px solid #d8dee6;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+    }
+    .dots { display: flex; gap: 6px; }
+    .dots span { width: 10px; height: 10px; border-radius: 50%; }
+    .d1 { background: #ff5f57; }
+    .d2 { background: #febc2e; }
+    .d3 { background: #28c840; }
+    .omni {
+      flex: 1;
+      height: 32px;
+      border-radius: 16px;
+      background: #f3f4f6;
+      color: #4b5563;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+    }
+    .ext-btn {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: #eef2ff;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ext-btn img { width: 20px; height: 20px; }
+    .stage {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 24px;
+      padding: 28px 32px 32px;
+    }
+    .job {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      padding: 28px 32px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+    .eyebrow { font-size: 12px; color: #6b7280; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+    .job h1 { font-size: 28px; letter-spacing: -0.03em; margin-bottom: 6px; }
+    .job .co { font-size: 15px; color: #4b5563; margin-bottom: 18px; }
+    .pills { display: flex; gap: 8px; margin-bottom: 22px; }
+    .pill { font-size: 12px; background: #f3f4f6; color: #374151; padding: 4px 10px; border-radius: 999px; }
+    .job h2 { font-size: 15px; margin: 18px 0 8px; }
+    .job p, .job li { font-size: 14px; line-height: 1.55; color: #4b5563; }
+    .job ul { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+    .panel {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-self: start;
+    }
+    .hdr { display: flex; justify-content: space-between; align-items: center; }
+    .wordmark { height: 24px; width: auto; }
+    .ver { font-size: 10px; color: #94a3b8; font-weight: 500; }
+    .jd {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .jd-title { font-weight: 600; font-size: 14px; color: #111827; }
+    .jd-co { font-size: 13px; color: #4b5563; margin-top: 4px; }
+    .jd-m { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+    .btn-primary {
+      padding: 9px 16px; background: #4f46e5; color: #fff; border: 0;
+      border-radius: 6px; font-size: 14px; font-weight: 500; width: 100%;
+    }
+    .btn-secondary {
+      padding: 9px 16px; background: #fff; color: #4f46e5;
+      border: 1px solid #c7d2fe; border-radius: 6px; font-size: 13px; font-weight: 500; width: 100%;
+    }
+    .hint { font-size: 12px; color: #6b7280; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <div class="chrome">
+    <div class="bar">
+      <div class="dots"><span class="d1"></span><span class="d2"></span><span class="d3"></span></div>
+      <div class="omni">linkedin.com/jobs/view/staff-software-engineer</div>
+      <div class="ext-btn"><img src="../../dist/icons/icon32.png" alt=""></div>
+    </div>
+    <div class="stage">
+      <section class="job">
+        <div class="eyebrow">Job posting</div>
+        <h1>Staff Software Engineer</h1>
+        <div class="co">Northwind · Seattle, WA · Hybrid</div>
+        <div class="pills"><span class="pill">Full-time</span><span class="pill">Posted 2 days ago</span></div>
+        <h2>About the role</h2>
+        <p>Own end-to-end delivery for a high-traffic product surface. You will design APIs, review architecture, and ship ATS-ready resume tailoring workflows used by job seekers every day.</p>
+        <h2>What you will do</h2>
+        <ul>
+          <li>Capture job descriptions from LinkedIn, Greenhouse, and similar boards.</li>
+          <li>Ship a one-click path from a posting into Flint Apply.</li>
+          <li>Keep the tailoring wizard fast, accurate, and easy to use.</li>
+        </ul>
+      </section>
+      <aside class="panel">
+        <div class="hdr">
+          <img class="wordmark" src="../../dist/brand/wordmark-light-256.png" alt="Flint Apply">
+          <span class="ver">v0.1.28</span>
+        </div>
+        <div class="jd">
+          <div class="jd-title">Staff Software Engineer</div>
+          <div class="jd-co">Northwind</div>
+          <div class="jd-m">Captured from this page</div>
+        </div>
+        <button class="btn-primary" type="button">Save job</button>
+        <button class="btn-secondary" type="button">Tailor in Flint Apply</button>
+        <button class="btn-secondary" type="button">Autofill (beta)</button>
+        <p class="hint">Job text is sent only to your Flint Apply account at flintapply.com. Open the panel from the toolbar or the floating logo.</p>
+      </aside>
+    </div>
+  </div>
+</body>
+</html>
