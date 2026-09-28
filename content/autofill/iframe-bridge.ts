@@ -6,6 +6,7 @@ import {
   FLINT_RUN_AUTOFILL,
   isFlintContentMessage,
   type FlintAutofillResultMessage,
+  type FlintJumpToFieldMessage,
   type FlintRunAutofillMessage,
 } from "../../src/autofillMessages.js";
 import { FLINT_CONTENT_SOURCE } from "../../src/panelMessages.js";
@@ -120,7 +121,7 @@ export function installIframeAutofillListener(hostname: string): void {
     }
 
     if (event.data.type === FLINT_JUMP_TO_FIELD) {
-      const selector = (event.data as { selector: string }).selector;
+      const selector = (event.data as FlintJumpToFieldMessage).selector;
       highlightFieldAtSelector(document, selector);
     }
   });

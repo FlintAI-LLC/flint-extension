@@ -9,8 +9,6 @@ import { resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import {
   extractMyGreenhouseFromDocument,
   findListCardFromClickEvent,
-  findSelectedJobListItem,
-  findVisibleJobHeaderFromDetailPane,
   isMyGreenhouseHost,
   isPlausibleJobHeader,
   resolveMyGreenhouseSelection,

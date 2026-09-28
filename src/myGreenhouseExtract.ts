@@ -86,7 +86,9 @@ export function findVisibleJobHeaderFromDetailPane(
   doc: Document,
 ): { title: string; company: string } | null {
   const viewportWidth = window.innerWidth || doc.documentElement.clientWidth || 1200;
-  let best: { title: string; company: string; score: number } | null = null;
+  const bestHolder: { value: { title: string; company: string; score: number } | null } = {
+    value: null,
+  };
 
   forEachElementIncludingShadow(doc, (el) => {
     if (!/^H[1-3]$/i.test(el.tagName)) return;
@@ -119,11 +121,12 @@ export function findVisibleJobHeaderFromDetailPane(
     if (!company) return;
 
     const score = rect.left + rect.width;
-    if (!best || score > best.score) {
-      best = { title, company, score };
+    if (!bestHolder.value || score > bestHolder.value.score) {
+      bestHolder.value = { title, company, score };
     }
   });
 
+  const best = bestHolder.value;
   if (best && isPlausibleJobHeader(best.title, best.company)) {
     return { title: best.title, company: best.company };
   }
@@ -360,33 +363,6 @@ export function parseListCardHeader(text: string): { title: string; company: str
     title: isMyGreenhouseBrandName(title) ? "" : title,
     company: isMyGreenhouseBrandName(company) ? "" : company,
   };
-}
-
-function scanRightPaneForJobHeader(
-  doc: Document,
-): { title: string; company: string } | null {
-  const viewportWidth = window.innerWidth || doc.documentElement.clientWidth || 1200;
-  let best: { title: string; company: string; score: number } | null = null;
-
-  forEachElementIncludingShadow(doc, (el) => {
-    if (!isVisible(el)) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.left < viewportWidth * 0.25) return;
-
-    const text = elementText(el);
-    if (!POSTED_PATTERN.test(text)) return;
-
-    const headerSource = text.length > 2500 ? text.slice(0, 800) : text;
-    const parsed = parseListCardHeader(headerSource);
-    if (!isPlausibleJobHeader(parsed.title, parsed.company)) return;
-
-    const score = rect.left + Math.min(text.length, 1200);
-    if (!best || score > best.score) {
-      best = { title: parsed.title, company: parsed.company, score };
-    }
-  });
-
-  return best ? { title: best.title, company: best.company } : null;
 }
 
 function collectListCards(

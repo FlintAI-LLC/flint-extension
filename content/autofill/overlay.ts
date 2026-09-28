@@ -3,7 +3,6 @@ import { countHighConfidenceFilled } from "./types.js";
 import { isolateExtensionUiClicks } from "../../src/extensionClickIsolation.js";
 import { broadcastJumpToField } from "./iframe-bridge.js";
 import { highlightFieldAtSelector } from "./field-highlight.js";
-import { querySelectorDeep } from "./fill-utils.js";
 
 export interface TailoredSessionOption {
   jd_id: string;

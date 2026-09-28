@@ -98,22 +98,6 @@ const FETCH_TIMEOUT_MS = 4000;
 const EXTRACTION_TIMEOUT_MS = 7000;
 const MY_GREENHOUSE_POPUP_TIMEOUT_MS = 16_000;
 
-function _withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise<T>((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms);
-    promise.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(fallback);
-      },
-    );
-  });
-}
-
 /** Fetch page HTML from the popup (extension context — no sleeping service worker). */
 async function _parseJdFromUrlDirect(
   url: string,
@@ -417,6 +401,7 @@ export function Popup(): React.ReactElement {
       { title: string; company: string; text: string } | null,
       ExtractedJD | null,
     ];
+    const tabId = tab.id;
     const extractResults = await new Promise<typeof extractFallback>((resolve) => {
       const timer = setTimeout(() => {
         resolve(extractFallback);
@@ -424,7 +409,7 @@ export function Popup(): React.ReactElement {
       Promise.all([
         !skipHtmlFetch && fetchUrl ? _parseJdFromUrlDirect(fetchUrl) : Promise.resolve(null),
         !skipHtmlFetch && fetchUrl ? _parseJdFromUrlViaServiceWorker(fetchUrl) : Promise.resolve(null),
-        _extractJdFromTab(tab.id, tab.url),
+        _extractJdFromTab(tabId, tab.url),
       ]).then(
         (value) => {
           clearTimeout(timer);
@@ -904,7 +889,7 @@ export function Popup(): React.ReactElement {
           {notOnJobMessage ??
             "Could not detect a job on this page. Open a LinkedIn, Greenhouse, Jobright, or UKG listing — or paste the job description manually."}
         </p>
-        <button className="btn-secondary" onClick={handleOpenManualEntry}>
+        <button className="btn-secondary" onClick={() => handleOpenManualEntry()}>
           Paste job description
         </button>
       </div>
