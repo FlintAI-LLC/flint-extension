@@ -1,8 +1,13 @@
-import type { UserInfo } from "./types.js";
-import { ApiError, apiGoogleCallback, apiLogin, apiRefresh } from "./api.js";
+import type { OAuthProviderId, UserInfo } from "./types.js";
+import { ApiError, apiOAuthCallback, apiLogin, apiRefresh } from "./api.js";
 import { formatApiErrorMessage } from "./formatApiError.js";
 import { waitForOAuthCodeInTab } from "./oauthTab.js";
-import { buildExtensionOAuthRedirectUri, buildGoogleAuthUrl } from "./urls.js";
+import {
+  buildExtensionOAuthRedirectUri,
+  buildGithubAuthUrl,
+  buildGoogleAuthUrl,
+  buildMicrosoftAuthUrl,
+} from "./urls.js";
 import {
   clearAuth,
   getAccessToken,
@@ -24,16 +29,43 @@ export async function login(email: string, password: string): Promise<UserInfo> 
   return data.user;
 }
 
-export async function loginWithGoogle(): Promise<UserInfo> {
+const PROVIDER_LABELS: Record<OAuthProviderId, string> = {
+  google: "Google",
+  github: "GitHub",
+  microsoft: "Microsoft",
+};
+
+function _buildProviderAuthUrl(provider: OAuthProviderId, redirectUri: string): string {
+  switch (provider) {
+    case "google":
+      return buildGoogleAuthUrl(redirectUri);
+    case "github":
+      return buildGithubAuthUrl(redirectUri);
+    case "microsoft":
+      return buildMicrosoftAuthUrl(redirectUri);
+  }
+}
+
+export async function loginWithProvider(provider: OAuthProviderId): Promise<UserInfo> {
   // Both Chrome and Firefox expose chrome.identity.launchWebAuthFlow, but each
   // browser issues its own redirect URI (Chrome: <id>.chromiumapp.org,
   // Firefox: <uuid>.extensions.allizom.org). The Firefox URI changes per
   // temporary add-on and is impractical to whitelist in Google Cloud Console,
   // so on Firefox we always fall back to the tab-based flow that uses the
   // stable web-app callback. Detect Firefox by its extension URL scheme.
+  //
+  // GitHub and Microsoft NEVER use chrome.identity, on any browser: GitHub
+  // OAuth Apps allow exactly one registered callback URL (no wildcards), and
+  // unpacked dev extension IDs change every load, so *.chromiumapp.org can
+  // never be registered for GitHub. Microsoft is deliberately kept on the
+  // same single tab-capture code path even though Entra could support many
+  // redirect URIs — this is a locked architecture decision, not an
+  // oversight. Do not add a chrome.identity branch for github/microsoft.
   const isFirefox = chrome.runtime.getURL("/").startsWith("moz-extension://");
   const useChromeIdentity =
-    !isFirefox && typeof chrome.identity?.launchWebAuthFlow === "function";
+    provider === "google" &&
+    !isFirefox &&
+    typeof chrome.identity?.launchWebAuthFlow === "function";
 
   let code: string;
   let redirectUri: string;
@@ -52,20 +84,22 @@ export async function loginWithGoogle(): Promise<UserInfo> {
     });
     const parsed = new URL(responseUrl);
     const extracted = parsed.searchParams.get("code");
-    if (!extracted) throw new Error("No authorization code returned from Google");
+    if (!extracted) {
+      throw new Error(`No authorization code returned from ${PROVIDER_LABELS[provider]}`);
+    }
     code = extracted;
   } else {
-    redirectUri = buildExtensionOAuthRedirectUri();
-    const authUrl = buildGoogleAuthUrl(redirectUri);
-    code = await waitForOAuthCodeInTab(authUrl, redirectUri);
+    redirectUri = buildExtensionOAuthRedirectUri(provider);
+    const authUrl = _buildProviderAuthUrl(provider, redirectUri);
+    code = await waitForOAuthCodeInTab(authUrl, redirectUri, PROVIDER_LABELS[provider]);
   }
 
   let data;
   try {
-    data = await apiGoogleCallback(code, redirectUri);
+    data = await apiOAuthCallback(provider, code, redirectUri);
   } catch (err) {
     if (err instanceof ApiError) {
-      throw new Error(formatApiErrorMessage(err.message, err.message));
+      throw new Error(formatApiErrorMessage(err.message, err.message, provider));
     }
     throw err;
   }

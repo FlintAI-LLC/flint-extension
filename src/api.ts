@@ -1,5 +1,6 @@
 import type {
   ExtensionLoginResponse,
+  OAuthProviderId,
   SaveJDRequest,
   SaveJDResponse,
 } from "./types.js";
@@ -120,13 +121,14 @@ export async function apiRefresh(
   });
 }
 
-export async function apiGoogleCallback(
+export async function apiOAuthCallback(
+  provider: OAuthProviderId,
   code: string,
   redirectUri: string,
 ): Promise<ExtensionLoginResponse> {
   return request<ExtensionLoginResponse>("/api/auth/extension/callback", {
     method: "POST",
-    body: JSON.stringify({ provider: "google", code, redirect_uri: redirectUri }),
+    body: JSON.stringify({ provider, code, redirect_uri: redirectUri }),
   });
 }
 

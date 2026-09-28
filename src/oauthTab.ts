@@ -1,6 +1,7 @@
 /**
- * Open Google OAuth in a tab and capture the authorization code when Google
- * redirects to the dedicated extension callback page (not the NextAuth route).
+ * Open a provider's OAuth authorization page in a tab and capture the
+ * authorization code when the provider redirects to the dedicated extension
+ * callback page for that provider (not the NextAuth route).
  *
  * Listens via tabs.onUpdated, webNavigation.onCommitted, AND polls the tab URL
  * every 400ms. The polling fallback exists because in Firefox temporary add-ons
@@ -13,6 +14,7 @@ const MAX_WAIT_MS = 5 * 60 * 1000;
 export async function waitForOAuthCodeInTab(
   authUrl: string,
   redirectUri: string,
+  providerLabel = "Google",
 ): Promise<string> {
   const redirectPrefix = redirectUri.split("?")[0];
   const webNavigationCommitted = chrome.webNavigation?.onCommitted;
@@ -51,7 +53,7 @@ export async function waitForOAuthCodeInTab(
           reject(
             new Error(
               parsed.searchParams.get("error_description") ??
-                `Google sign-in failed (${error})`,
+                `${providerLabel} sign-in failed (${error})`,
             ),
           );
         });
@@ -60,7 +62,9 @@ export async function waitForOAuthCodeInTab(
 
       const code = parsed.searchParams.get("code");
       if (!code) {
-        finish(() => reject(new Error("No authorization code returned from Google")));
+        finish(() =>
+          reject(new Error(`No authorization code returned from ${providerLabel}`)),
+        );
         return;
       }
 

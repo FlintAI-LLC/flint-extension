@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Flint Apply",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "description": "Capture job postings and tailor your resume in Flint Apply.",
   "permissions": [
     "storage",
