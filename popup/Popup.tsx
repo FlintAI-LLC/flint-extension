@@ -286,14 +286,27 @@ export function Popup(): React.ReactElement {
   const [fabHiddenOnTab, setFabHiddenOnTab] = useState(false);
   const extractJdRef = useRef<() => Promise<void>>(async () => {});
   const manualEntryReturnRef = useRef<View>("not_on_job");
+  const initCancelledRef = useRef(false);
+  const [showManualLoginEscape, setShowManualLoginEscape] = useState(false);
 
   useEffect(() => {
+    initCancelledRef.current = false;
     void _init();
     return () => {
+      initCancelledRef.current = true;
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       if (initWatchdogRef.current) clearTimeout(initWatchdogRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (view !== "loading") {
+      setShowManualLoginEscape(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowManualLoginEscape(true), 4_500);
+    return () => clearTimeout(timer);
+  }, [view]);
 
   useEffect(() => {
     const onRefresh = (_event: Event) => {
@@ -310,6 +323,13 @@ export function Popup(): React.ReactElement {
     window.addEventListener(FLINT_JD_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(FLINT_JD_REFRESH_EVENT, onRefresh);
   }, []);
+
+  function skipToLogin(): void {
+    initCancelledRef.current = true;
+    setOauthLoading(null);
+    setWebHandoffLoading(false);
+    setView("login");
+  }
 
   async function _init(): Promise<void> {
     if (!isExtensionContextValid()) {
@@ -354,15 +374,18 @@ export function Popup(): React.ReactElement {
       let token = await getAccessTokenOrNull();
       if (!token) {
         setLoadingStatus("Checking Flint Apply in your browser…");
-        const handoffUser = await tryLoginFromWebSession();
+        const handoffUser = await tryLoginFromWebSession({ retryAfterMs: 500 });
+        if (initCancelledRef.current) return;
         if (handoffUser) {
           token = await getAccessTokenOrNull();
         }
       }
       if (!token) {
+        if (initCancelledRef.current) return;
         setView("login");
         return;
       }
+      if (initCancelledRef.current) return;
       chrome.runtime.sendMessage({ type: "FETCH_RECENT_TAILORED_SESSIONS" });
       setLoadingStatus("Reading the job posting…");
       await _extractJD();
@@ -848,6 +871,16 @@ export function Popup(): React.ReactElement {
         <p className="ext-version ext-version-corner">v{getExtensionVersion()}</p>
         <div className="spinner" aria-label="Loading" />
         <p className="hint hint-compact">{loadingStatus}</p>
+        {showManualLoginEscape && (
+          <>
+            <p className="hint hint-compact">
+              Taking a while? You can sign in manually while we finish checking your browser tabs.
+            </p>
+            <button type="button" className="btn-ghost" onClick={skipToLogin}>
+              Show sign-in options
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -856,7 +889,7 @@ export function Popup(): React.ReactElement {
     setLoginError(null);
     setWebHandoffLoading(true);
     try {
-      const user = await tryLoginFromWebSession();
+      const user = await tryLoginFromWebSession({ retryAfterMs: 500 });
       if (!user) {
         setLoginError(
           `Open ${PRODUCT_NAME} in another tab and sign in there, then try again.`,
