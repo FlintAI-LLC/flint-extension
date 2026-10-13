@@ -40,6 +40,11 @@ import {
 } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
 import { isAutofillEnabled, isAutofillHost, isLinkedInHost } from "../src/autofillFlags.js";
+import {
+  getFabHideReason,
+  hostnameFromUrl,
+  restoreFabVisibility,
+} from "../src/fabVisibility.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 const GITHUB_ENABLED = Boolean(getGithubClientId());
@@ -278,6 +283,7 @@ export function Popup(): React.ReactElement {
   const [loadingStatus, setLoadingStatus] = useState<string>("Detecting job description…");
   const [autofillEnabled, setAutofillEnabled] = useState(true);
   const [autofillHint, setAutofillHint] = useState<string | null>(null);
+  const [fabHiddenOnTab, setFabHiddenOnTab] = useState(false);
   const extractJdRef = useRef<() => Promise<void>>(async () => {});
   const manualEntryReturnRef = useRef<View>("not_on_job");
 
@@ -726,6 +732,51 @@ export function Popup(): React.ReactElement {
     void isAutofillEnabled().then(setAutofillEnabled);
   }, [view]);
 
+  useEffect(() => {
+    const refreshFabHidden = (): void => {
+      void (async () => {
+        const tab = await resolveHostTab();
+        const host = hostnameFromUrl(tab?.url ?? tabUrl);
+        if (!host) {
+          setFabHiddenOnTab(false);
+          return;
+        }
+        const reason = await getFabHideReason(host);
+        setFabHiddenOnTab(reason !== "none");
+      })();
+    };
+    refreshFabHidden();
+    const onStorage = (): void => refreshFabHidden();
+    chrome.storage.onChanged.addListener(onStorage);
+    return () => chrome.storage.onChanged.removeListener(onStorage);
+  }, [view, tabUrl]);
+
+  async function handleRestoreFloatingButton(): Promise<void> {
+    const tab = await resolveHostTab();
+    const host = hostnameFromUrl(tab?.url ?? tabUrl);
+    await restoreFabVisibility(host ?? undefined);
+    setFabHiddenOnTab(false);
+  }
+
+  function renderAccountControls(): React.ReactNode {
+    return (
+      <div className="popup-header-actions">
+        {fabHiddenOnTab && (
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => void handleRestoreFloatingButton()}
+          >
+            Show floating button
+          </button>
+        )}
+        <button type="button" className="btn-ghost" onClick={() => void handleLogout()}>
+          Log out
+        </button>
+      </div>
+    );
+  }
+
   async function handleAutofillBeta(): Promise<void> {
     if (!savedJdId) return;
     setAutofillHint(null);
@@ -920,11 +971,7 @@ export function Popup(): React.ReactElement {
   if (view === "not_on_job") {
     return (
       <div className="popup">
-        <PopupHeader>
-          <button className="btn-ghost" onClick={() => void handleLogout()}>
-            Log out
-          </button>
-        </PopupHeader>
+        <PopupHeader>{renderAccountControls()}</PopupHeader>
         <p className="hint">
           {notOnJobMessage ??
             "Could not detect a job on this page. Open a LinkedIn, Greenhouse, Jobright, or UKG listing — or paste the job description manually."}
@@ -1008,11 +1055,7 @@ export function Popup(): React.ReactElement {
   if (view === "job_ready" && jd) {
     return (
       <div className="popup">
-        <PopupHeader>
-          <button className="btn-ghost" onClick={() => void handleLogout()}>
-            Log out
-          </button>
-        </PopupHeader>
+        <PopupHeader>{renderAccountControls()}</PopupHeader>
         <div className="jd-preview">
           <p className="jd-title">{jd.title || "Untitled Role"}</p>
           {jd.company && <p className="jd-company">{jd.company}</p>}
@@ -1046,7 +1089,7 @@ export function Popup(): React.ReactElement {
   if (view === "saved" && jd) {
     return (
       <div className="popup">
-        <PopupHeader />
+        <PopupHeader>{renderAccountControls()}</PopupHeader>
         <div className="jd-preview">
           <p className="jd-title">{jd.title || "Untitled Role"}</p>
           {jd.company && <p className="jd-company">{jd.company}</p>}
@@ -1114,7 +1157,7 @@ export function Popup(): React.ReactElement {
   if (view === "error") {
     return (
       <div className="popup">
-        <PopupHeader />
+        <PopupHeader>{renderAccountControls()}</PopupHeader>
         <p className="error-text">{errorMessage ?? "Something went wrong."}</p>
         <button className="btn-ghost" onClick={() => setView("job_ready")}>
           Try again
