@@ -29,8 +29,27 @@ const REFRESH_INTERVAL_MINUTES = 25;
 // Tokens within this window (ms) of expiry are considered stale.
 const EXPIRY_BUFFER_MS = 2 * 60 * 1000;
 
-/** Adopt an existing Flint Apply web tab session (no OAuth) when available. */
-export async function tryLoginFromWebSession(): Promise<UserInfo | null> {
+const WEB_HANDOFF_TAB_MESSAGE_MS = 6_000;
+
+function requestWebHandoffCode(tabId: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), WEB_HANDOFF_TAB_MESSAGE_MS);
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "FLINT_EXTENSION_WEB_HANDOFF" },
+      (response: { code?: string } | undefined) => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(response?.code ?? null);
+      },
+    );
+  });
+}
+
+async function tryLoginFromWebSessionOnce(): Promise<UserInfo | null> {
   const base = getWebAppBaseUrl().replace(/\/$/, "");
   const patterns = [`${base}/*`];
   const tabs: chrome.tabs.Tab[] = [];
@@ -40,10 +59,7 @@ export async function tryLoginFromWebSession(): Promise<UserInfo | null> {
   for (const tab of tabs) {
     if (!tab.id) continue;
     try {
-      const response = (await chrome.tabs.sendMessage(tab.id, {
-        type: "FLINT_EXTENSION_WEB_HANDOFF",
-      })) as { code?: string } | undefined;
-      const code = response?.code;
+      const code = await requestWebHandoffCode(tab.id);
       if (!code) continue;
       const data = await apiExchangeWebHandoff(code);
       await saveAuth(data.access_token, data.refresh_token, data.expires_in, data.user);
@@ -54,6 +70,19 @@ export async function tryLoginFromWebSession(): Promise<UserInfo | null> {
     }
   }
   return null;
+}
+
+/** Adopt an existing Flint Apply web tab session (no OAuth) when available. */
+export async function tryLoginFromWebSession(options?: {
+  /** Retry once after a short delay (content script may not be ready yet). */
+  retryAfterMs?: number;
+}): Promise<UserInfo | null> {
+  const first = await tryLoginFromWebSessionOnce();
+  if (first) return first;
+  const delay = options?.retryAfterMs;
+  if (!delay || delay <= 0) return null;
+  await new Promise((r) => setTimeout(r, delay));
+  return tryLoginFromWebSessionOnce();
 }
 
 export async function login(email: string, password: string): Promise<UserInfo> {
