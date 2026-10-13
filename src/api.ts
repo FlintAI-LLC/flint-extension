@@ -132,6 +132,15 @@ export async function apiOAuthCallback(
   });
 }
 
+export async function apiExchangeWebHandoff(
+  code: string,
+): Promise<ExtensionLoginResponse> {
+  return request<ExtensionLoginResponse>("/api/auth/extension/web-handoff/exchange", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
 export async function apiSaveJD(
   payload: SaveJDRequest,
   accessToken: string,

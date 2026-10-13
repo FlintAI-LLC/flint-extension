@@ -1,5 +1,12 @@
 import type { OAuthProviderId, UserInfo } from "./types.js";
-import { ApiError, apiOAuthCallback, apiLogin, apiRefresh } from "./api.js";
+import {
+  ApiError,
+  apiExchangeWebHandoff,
+  apiOAuthCallback,
+  apiLogin,
+  apiRefresh,
+} from "./api.js";
+import { getWebAppBaseUrl } from "./urls.js";
 import { formatApiErrorMessage } from "./formatApiError.js";
 import { waitForOAuthCodeInTab } from "./oauthTab.js";
 import {
@@ -21,6 +28,33 @@ const REFRESH_INTERVAL_MINUTES = 25;
 
 // Tokens within this window (ms) of expiry are considered stale.
 const EXPIRY_BUFFER_MS = 2 * 60 * 1000;
+
+/** Adopt an existing Flint Apply web tab session (no OAuth) when available. */
+export async function tryLoginFromWebSession(): Promise<UserInfo | null> {
+  const base = getWebAppBaseUrl().replace(/\/$/, "");
+  const patterns = [`${base}/*`];
+  const tabs: chrome.tabs.Tab[] = [];
+  for (const pattern of patterns) {
+    tabs.push(...(await chrome.tabs.query({ url: pattern })));
+  }
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    try {
+      const response = (await chrome.tabs.sendMessage(tab.id, {
+        type: "FLINT_EXTENSION_WEB_HANDOFF",
+      })) as { code?: string } | undefined;
+      const code = response?.code;
+      if (!code) continue;
+      const data = await apiExchangeWebHandoff(code);
+      await saveAuth(data.access_token, data.refresh_token, data.expires_in, data.user);
+      await _registerRefreshAlarm();
+      return data.user;
+    } catch {
+      // Tab may lack the bridge script or the user is signed out on the web.
+    }
+  }
+  return null;
+}
 
 export async function login(email: string, password: string): Promise<UserInfo> {
   const data = await apiLogin(email, password);
