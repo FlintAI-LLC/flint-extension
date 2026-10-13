@@ -7,7 +7,7 @@ import type {
   ParseJdFromUrlResult,
 } from "../src/types.js";
 import { formatApiErrorMessage } from "../src/formatApiError.js";
-import { getAccessTokenOrNull, login, logout } from "../src/auth.js";
+import { getAccessTokenOrNull, login, logout, tryLoginFromWebSession } from "../src/auth.js";
 import { ApiError, apiSaveJD } from "../src/api.js";
 import {
   buildTailorInFlintApplyUrl,
@@ -260,6 +260,7 @@ export function Popup(): React.ReactElement {
   // Tracks which provider's OAuth flow is in flight (null = none). A single
   // field is sufficient because only one OAuth login can run at a time.
   const [oauthLoading, setOauthLoading] = useState<OAuthProviderId | null>(null);
+  const [webHandoffLoading, setWebHandoffLoading] = useState(false);
   const [jd, setJd] = useState<ExtractedJD | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notOnJobMessage, setNotOnJobMessage] = useState<string | null>(null);
@@ -344,7 +345,14 @@ export function Popup(): React.ReactElement {
 
     try {
       setLoadingStatus("Checking your session…");
-      const token = await getAccessTokenOrNull();
+      let token = await getAccessTokenOrNull();
+      if (!token) {
+        setLoadingStatus("Checking Flint Apply in your browser…");
+        const handoffUser = await tryLoginFromWebSession();
+        if (handoffUser) {
+          token = await getAccessTokenOrNull();
+        }
+      }
       if (!token) {
         setView("login");
         return;
@@ -793,11 +801,43 @@ export function Popup(): React.ReactElement {
     );
   }
 
+  async function handleWebHandoffLogin(): Promise<void> {
+    setLoginError(null);
+    setWebHandoffLoading(true);
+    try {
+      const user = await tryLoginFromWebSession();
+      if (!user) {
+        setLoginError(
+          `Open ${PRODUCT_NAME} in another tab and sign in there, then try again.`,
+        );
+        return;
+      }
+      setView("loading");
+      setLoadingStatus("Reading the job posting…");
+      await _extractJD();
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : "Could not use your web session.");
+    } finally {
+      setWebHandoffLoading(false);
+    }
+  }
+
   if (view === "login") {
     const anyOAuthEnabled = GOOGLE_ENABLED || GITHUB_ENABLED || MICROSOFT_ENABLED;
     return (
       <div className="popup">
         <PopupHeader />
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => void handleWebHandoffLogin()}
+          disabled={oauthLoading !== null || webHandoffLoading}
+        >
+          {webHandoffLoading
+            ? "Connecting to your open tab…"
+            : `Use open ${PRODUCT_NAME} tab`}
+        </button>
+        <div className="login-divider"><span>or</span></div>
         {anyOAuthEnabled && (
           <>
             {GOOGLE_ENABLED && (
