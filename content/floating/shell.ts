@@ -266,7 +266,6 @@ export class FloatingShell {
   private host: HTMLElement | null = null;
   private shadow: ShadowRoot | null = null;
   private fabWrap: HTMLElement | null = null;
-  private fabButton: HTMLButtonElement | null = null;
   private fabMenuEl: HTMLElement | null = null;
   private drawerEl: HTMLElement | null = null;
   private frameEl: HTMLIFrameElement | null = null;
@@ -289,7 +288,6 @@ export class FloatingShell {
       this.host = existing;
       this.shadow = existing.shadowRoot;
       this.fabWrap = this.shadow.querySelector<HTMLElement>(".fab-wrap");
-      this.fabButton = this.shadow.querySelector<HTMLButtonElement>(".fab");
       this.fabMenuEl = this.shadow.querySelector<HTMLElement>(".fab-menu");
       this.drawerEl = this.shadow.querySelector<HTMLElement>(".drawer");
       this.frameEl = this.shadow.querySelector<HTMLIFrameElement>(".drawer-frame");
@@ -313,7 +311,6 @@ export class FloatingShell {
 
     const fabUi = this.buildFabUi();
     this.fabWrap = fabUi.wrap;
-    this.fabButton = fabUi.button;
     this.fabMenuEl = fabUi.menu;
     this.drawerEl = this.buildDrawer();
 
@@ -436,7 +433,6 @@ export class FloatingShell {
     this.host = null;
     this.shadow = null;
     this.fabWrap = null;
-    this.fabButton = null;
     this.fabMenuEl = null;
     this.drawerEl = null;
     this.frameEl = null;
