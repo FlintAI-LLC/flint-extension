@@ -47,6 +47,13 @@ html.flint-in-drawer .popup-header:not(:has(.btn-ghost)) {
   align-items: center;
 }
 
+.popup-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
 .popup-header-brand {
   display: flex;
   flex-direction: column;

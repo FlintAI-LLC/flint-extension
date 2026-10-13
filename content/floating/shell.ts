@@ -13,6 +13,13 @@ import {
   reparentFlintUiHost,
 } from "../../src/myGreenhouseUiMount.js";
 import { FLINT_CONTENT_SOURCE, FLINT_MYGH_JOB_CHANGED } from "../../src/panelMessages.js";
+import {
+  currentPageHostname,
+  hideFabFor24Hours,
+  hideFabOnAllSites,
+  hideFabOnSiteForSession,
+  shouldShowFab,
+} from "../../src/fabVisibility.js";
 import { getPanelExpanded, setPanelExpanded } from "./panelState.js";
 
 const HOST_ATTRIBUTE = "data-flint-floating-shell";
@@ -36,13 +43,24 @@ const SHELL_STYLES = `
     pointer-events: none;
   }
   .fab,
-  .drawer {
+  .drawer,
+  .fab-wrap {
     pointer-events: auto;
   }
-  .fab {
+  .fab-wrap {
     position: fixed;
     bottom: 20px;
     right: 20px;
+    width: 56px;
+    height: 56px;
+    z-index: 2147483647;
+  }
+  .fab-wrap[hidden] {
+    display: none;
+  }
+  .fab {
+    position: absolute;
+    inset: 0;
     width: 56px;
     height: 56px;
     border-radius: 50%;
@@ -54,13 +72,68 @@ const SHELL_STYLES = `
     justify-content: center;
     cursor: pointer;
     padding: 0;
-    z-index: 2147483647;
   }
   .fab:hover {
     background: #115e59;
   }
-  .fab[hidden] {
+  .fab-dismiss {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    background: #334155;
+    color: #ffffff;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+  }
+  .fab-dismiss:hover {
+    background: #1e293b;
+  }
+  .fab-menu {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    right: 0;
+    width: 248px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.22);
+    border: 1px solid #e2e8f0;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .fab-menu[hidden] {
     display: none;
+  }
+  .fab-menu-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    padding: 4px 8px 6px;
+  }
+  .fab-menu button {
+    border: none;
+    background: transparent;
+    text-align: left;
+    font-size: 13px;
+    color: #0f172a;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .fab-menu button:hover {
+    background: #f1f5f9;
   }
   .fab img {
     width: 28px;
@@ -171,6 +244,16 @@ function ensureDocumentListeners(): void {
   window.addEventListener("message", onPageMessage);
 }
 
+let storageListenerRegistered = false;
+
+function ensureStorageListener(): void {
+  if (storageListenerRegistered) return;
+  storageListenerRegistered = true;
+  chrome.storage.onChanged.addListener(() => {
+    void activeShell?.refreshFabVisibility();
+  });
+}
+
 function teardownDocumentListeners(): void {
   document.removeEventListener("click", onDocumentClick, true);
   document.removeEventListener("keydown", onDocumentKeydown);
@@ -182,7 +265,8 @@ function teardownDocumentListeners(): void {
 export class FloatingShell {
   private host: HTMLElement | null = null;
   private shadow: ShadowRoot | null = null;
-  private fabButton: HTMLButtonElement | null = null;
+  private fabWrap: HTMLElement | null = null;
+  private fabMenuEl: HTMLElement | null = null;
   private drawerEl: HTMLElement | null = null;
   private frameEl: HTMLIFrameElement | null = null;
   private expanded = false;
@@ -203,7 +287,8 @@ export class FloatingShell {
       // instead of creating a second overlapping host.
       this.host = existing;
       this.shadow = existing.shadowRoot;
-      this.fabButton = this.shadow.querySelector<HTMLButtonElement>(".fab");
+      this.fabWrap = this.shadow.querySelector<HTMLElement>(".fab-wrap");
+      this.fabMenuEl = this.shadow.querySelector<HTMLElement>(".fab-menu");
       this.drawerEl = this.shadow.querySelector<HTMLElement>(".drawer");
       this.frameEl = this.shadow.querySelector<HTMLIFrameElement>(".drawer-frame");
       this.expanded = Boolean(this.drawerEl && !this.drawerEl.hidden);
@@ -211,6 +296,7 @@ export class FloatingShell {
       reparentFlintUiHost(existing);
       activeShell = this;
       ensureDocumentListeners();
+      void this.refreshFabVisibility();
       return;
     }
 
@@ -223,16 +309,20 @@ export class FloatingShell {
     style.textContent = SHELL_STYLES;
     this.shadow.appendChild(style);
 
-    this.fabButton = this.buildFabButton();
+    const fabUi = this.buildFabUi();
+    this.fabWrap = fabUi.wrap;
+    this.fabMenuEl = fabUi.menu;
     this.drawerEl = this.buildDrawer();
 
-    this.shadow.append(this.fabButton, this.drawerEl);
+    this.shadow.append(this.fabWrap, this.drawerEl);
     const mountRoot = findMyGreenhouseUiMountRoot() ?? anchor;
     mountRoot.appendChild(this.host);
     reparentFlintUiHost(this.host);
 
     activeShell = this;
     ensureDocumentListeners();
+    ensureStorageListener();
+    void this.refreshFabVisibility();
   }
 
   getHost(): HTMLElement | null {
@@ -248,7 +338,7 @@ export class FloatingShell {
     activeShell = this;
     this.expanded = true;
     if (this.drawerEl) this.drawerEl.hidden = false;
-    if (this.fabButton) this.fabButton.hidden = true;
+    if (this.fabWrap) this.fabWrap.hidden = true;
     void setPanelExpanded(true);
     // Re-extract only after the user picks another job — not on every FAB reopen.
     if (this.pendingJobRefresh) {
@@ -278,8 +368,8 @@ export class FloatingShell {
   collapse(): void {
     this.expanded = false;
     if (this.drawerEl) this.drawerEl.hidden = true;
-    if (this.fabButton) this.fabButton.hidden = false;
     void setPanelExpanded(false);
+    void this.refreshFabVisibility();
   }
 
   toggle(): void {
@@ -295,13 +385,30 @@ export class FloatingShell {
     activeShell = this;
     this.expanded = true;
     if (this.drawerEl) this.drawerEl.hidden = false;
-    if (this.fabButton) this.fabButton.hidden = true;
+    if (this.fabWrap) this.fabWrap.hidden = true;
     this.reloadPanelFrame("session-restore");
   }
 
+  async refreshFabVisibility(): Promise<void> {
+    if (!this.fabWrap || !this.host?.isConnected) return;
+    if (this.expanded) {
+      this.fabWrap.hidden = true;
+      this.closeFabMenu();
+      return;
+    }
+    const show = await shouldShowFab(currentPageHostname());
+    if (!this.fabWrap || !this.host?.isConnected) return;
+    this.fabWrap.hidden = !show;
+    if (!show) this.closeFabMenu();
+  }
+
   handleOutsideClick(event: MouseEvent): void {
-    if (!this.expanded || !this.host) return;
-    if (event.composedPath().includes(this.host)) return;
+    if (!this.host) return;
+    if (event.composedPath().includes(this.host)) {
+      return;
+    }
+    this.closeFabMenu();
+    if (!this.expanded) return;
     this.collapse();
   }
 
@@ -325,13 +432,36 @@ export class FloatingShell {
     this.host?.remove();
     this.host = null;
     this.shadow = null;
-    this.fabButton = null;
+    this.fabWrap = null;
+    this.fabMenuEl = null;
     this.drawerEl = null;
     this.frameEl = null;
     this.expanded = false;
   }
 
-  private buildFabButton(): HTMLButtonElement {
+  private closeFabMenu(): void {
+    if (this.fabMenuEl) this.fabMenuEl.hidden = true;
+  }
+
+  private toggleFabMenu(): void {
+    if (!this.fabMenuEl) return;
+    this.fabMenuEl.hidden = !this.fabMenuEl.hidden;
+  }
+
+  private async applyFabHide(mode: "site_session" | "snooze" | "global"): Promise<void> {
+    const host = currentPageHostname();
+    if (mode === "site_session") await hideFabOnSiteForSession(host);
+    else if (mode === "snooze") await hideFabFor24Hours();
+    else await hideFabOnAllSites();
+    this.closeFabMenu();
+    if (this.expanded) this.collapse();
+    await this.refreshFabVisibility();
+  }
+
+  private buildFabUi(): { wrap: HTMLElement; button: HTMLButtonElement; menu: HTMLElement } {
+    const wrap = document.createElement("div");
+    wrap.className = "fab-wrap";
+
     const button = document.createElement("button");
     button.type = "button";
     button.className = "fab";
@@ -340,19 +470,64 @@ export class FloatingShell {
     icon.src = chrome.runtime.getURL("icons/icon48.png");
     icon.alt = PRODUCT_NAME;
     button.appendChild(icon);
-    const open = (): void => {
-      this.expand();
-    };
     button.addEventListener(
       "click",
       (event) => {
         event.preventDefault();
         event.stopPropagation();
-        open();
+        this.closeFabMenu();
+        this.expand();
       },
       true,
     );
-    return button;
+
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "fab-dismiss";
+    dismiss.setAttribute("aria-label", `Hide ${PRODUCT_NAME} button`);
+    dismiss.textContent = "\u00d7";
+    dismiss.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.toggleFabMenu();
+      },
+      true,
+    );
+
+    const menu = document.createElement("div");
+    menu.className = "fab-menu";
+    menu.hidden = true;
+
+    const title = document.createElement("p");
+    title.className = "fab-menu-title";
+    title.textContent = "Hide floating button";
+
+    const siteBtn = document.createElement("button");
+    siteBtn.type = "button";
+    siteBtn.textContent = "On this site until I close the browser";
+    siteBtn.addEventListener("click", () => void this.applyFabHide("site_session"));
+
+    const snoozeBtn = document.createElement("button");
+    snoozeBtn.type = "button";
+    snoozeBtn.textContent = "On all sites for 24 hours";
+    snoozeBtn.addEventListener("click", () => void this.applyFabHide("snooze"));
+
+    const globalBtn = document.createElement("button");
+    globalBtn.type = "button";
+    globalBtn.textContent = "On all sites until I turn it back on";
+    globalBtn.addEventListener("click", () => void this.applyFabHide("global"));
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => this.closeFabMenu());
+
+    menu.append(title, siteBtn, snoozeBtn, globalBtn, cancelBtn);
+    wrap.append(button, dismiss, menu);
+
+    return { wrap, button, menu };
   }
 
   private buildDrawer(): HTMLElement {

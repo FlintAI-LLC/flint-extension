@@ -4,6 +4,7 @@ import {
   FLOATING_PANEL_EXPANDED_KEY,
   getPanelExpanded,
 } from "../../content/floating/panelState.js";
+import { hideFabOnSiteForSession } from "../../src/fabVisibility.js";
 import {
   FLINT_CONTENT_SOURCE,
   FLINT_MYGH_JOB_CHANGED,
@@ -34,10 +35,10 @@ describe("FloatingShell", () => {
     expect(host).not.toBeNull();
 
     const shadow = (host as HTMLElement).shadowRoot!;
-    const fab = shadow.querySelector(".fab") as HTMLButtonElement;
+    const fabWrap = shadow.querySelector(".fab-wrap") as HTMLElement;
     const drawer = shadow.querySelector(".drawer") as HTMLElement;
 
-    expect(fab.hidden).toBe(false);
+    expect(fabWrap.hidden).toBe(false);
     expect(drawer.hidden).toBe(true);
     expect(shell.isExpanded()).toBe(false);
   });
@@ -49,13 +50,14 @@ describe("FloatingShell", () => {
     const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
     const shadow = host.shadowRoot!;
     const fab = shadow.querySelector(".fab") as HTMLButtonElement;
+    const fabWrap = shadow.querySelector(".fab-wrap") as HTMLElement;
     const drawer = shadow.querySelector(".drawer") as HTMLElement;
 
     fab.click();
 
     expect(shell.isExpanded()).toBe(true);
     expect(drawer.hidden).toBe(false);
-    expect(fab.hidden).toBe(true);
+    expect(fabWrap.hidden).toBe(true);
   });
 
   it("loads the popup UI in an extension-origin iframe", () => {
@@ -289,5 +291,34 @@ describe("FloatingShell", () => {
 
     expect(clickCallsAfterSecond).toBe(clickCallsAfterFirst);
     clickSpy.mockRestore();
+  });
+
+  it("hides the FAB when the user dismisses it for this site", async () => {
+    const shell = new FloatingShell();
+    shell.mount();
+
+    const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
+    const shadow = host.shadowRoot!;
+    const fabWrap = shadow.querySelector(".fab-wrap") as HTMLElement;
+    const dismiss = shadow.querySelector(".fab-dismiss") as HTMLButtonElement;
+    const menu = shadow.querySelector(".fab-menu") as HTMLElement;
+    const siteHide = menu.querySelector("button") as HTMLButtonElement;
+
+    dismiss.click();
+    expect(menu.hidden).toBe(false);
+
+    siteHide.click();
+    await vi.waitFor(() => expect(fabWrap.hidden).toBe(true));
+  });
+
+  it("refreshFabVisibility respects stored hide rules", async () => {
+    await hideFabOnSiteForSession(window.location.hostname);
+    const shell = new FloatingShell();
+    shell.mount();
+    await shell.refreshFabVisibility();
+
+    const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
+    const fabWrap = host.shadowRoot!.querySelector(".fab-wrap") as HTMLElement;
+    expect(fabWrap.hidden).toBe(true);
   });
 });

@@ -6,6 +6,9 @@ import { vi } from "vitest";
 const _store: Record<string, unknown> = {};
 const _sessionStore: Record<string, unknown> = {};
 const _alarms: Record<string, chrome.alarms.Alarm> = {};
+const _storageChangeListeners: Array<
+  (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+> = [];
 const _messageListeners: Array<
   (
     message: unknown,
@@ -30,7 +33,14 @@ const chromeMock: Partial<typeof chrome> = {
         return Promise.resolve(result);
       },
       set: (items: Record<string, unknown>) => {
-        Object.assign(_store, items);
+        const changes: Record<string, chrome.storage.StorageChange> = {};
+        for (const [key, value] of Object.entries(items)) {
+          changes[key] = { oldValue: _store[key], newValue: value };
+          _store[key] = value;
+        }
+        for (const listener of _storageChangeListeners) {
+          listener(changes, "local");
+        }
         return Promise.resolve();
       },
       remove: (keys: string | string[]) => {
@@ -57,7 +67,14 @@ const chromeMock: Partial<typeof chrome> = {
         return Promise.resolve(result);
       },
       set: (items: Record<string, unknown>) => {
-        Object.assign(_sessionStore, items);
+        const changes: Record<string, chrome.storage.StorageChange> = {};
+        for (const [key, value] of Object.entries(items)) {
+          changes[key] = { oldValue: _sessionStore[key], newValue: value };
+          _sessionStore[key] = value;
+        }
+        for (const listener of _storageChangeListeners) {
+          listener(changes, "session");
+        }
         return Promise.resolve();
       },
       remove: (keys: string | string[]) => {
@@ -70,6 +87,22 @@ const chromeMock: Partial<typeof chrome> = {
         return Promise.resolve();
       },
     },
+    onChanged: {
+      addListener: (
+        cb: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void,
+      ) => {
+        _storageChangeListeners.push(cb);
+      },
+      removeListener: (
+        cb: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void,
+      ) => {
+        const idx = _storageChangeListeners.indexOf(cb);
+        if (idx >= 0) _storageChangeListeners.splice(idx, 1);
+      },
+      hasListener: () => false,
+    } as unknown as chrome.events.Event<
+      (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+    >,
   } as unknown as typeof chrome.storage,
 
   alarms: {
