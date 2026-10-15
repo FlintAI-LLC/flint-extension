@@ -1,5 +1,5 @@
 /** Public Chrome Web Store build while a newer zip is in review (update when CWS goes live). */
-export const CHROME_WEB_STORE_LIVE_VERSION = "0.1.35";
+export const CHROME_WEB_STORE_LIVE_VERSION = "0.1.41";
 
 /** Latest dev zip on flintapply.com/extension — keep in sync with manifest.json. */
 export const RECOMMENDED_DEV_BUILD_VERSION = "0.1.42";
