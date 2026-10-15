@@ -126,6 +126,7 @@ const chromeMock: Partial<typeof chrome> = {
   } as unknown as typeof chrome.alarms,
 
   runtime: {
+    id: "fake-id",
     onMessage: {
       addListener: (
         cb: (

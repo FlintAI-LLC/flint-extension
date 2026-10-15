@@ -3,6 +3,8 @@
  * The toolbar / drawer can still open the panel when the FAB is hidden.
  */
 
+import { isExtensionContextValid } from "./extensionContext.js";
+
 export const FAB_HIDE_GLOBAL_KEY = "flint_fab_hide_global";
 export const FAB_SNOOZE_UNTIL_KEY = "flint_fab_snooze_until";
 export const FAB_HIDE_HOSTS_SESSION_KEY = "flint_fab_hide_hosts_session";
@@ -25,30 +27,45 @@ export function hostnameFromUrl(url: string | undefined): string | null {
 }
 
 async function readSessionHiddenHosts(): Promise<string[]> {
-  const result = await chrome.storage.session.get(FAB_HIDE_HOSTS_SESSION_KEY);
-  const raw = result[FAB_HIDE_HOSTS_SESSION_KEY];
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((h): h is string => typeof h === "string").map(normalizeHostname);
+  if (!isExtensionContextValid()) return [];
+  try {
+    const result = await chrome.storage.session.get(FAB_HIDE_HOSTS_SESSION_KEY);
+    const raw = result[FAB_HIDE_HOSTS_SESSION_KEY];
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((h): h is string => typeof h === "string").map(normalizeHostname);
+  } catch {
+    return [];
+  }
 }
 
 async function writeSessionHiddenHosts(hosts: string[]): Promise<void> {
-  await chrome.storage.session.set({ [FAB_HIDE_HOSTS_SESSION_KEY]: hosts });
+  if (!isExtensionContextValid()) return;
+  try {
+    await chrome.storage.session.set({ [FAB_HIDE_HOSTS_SESSION_KEY]: hosts });
+  } catch {
+    // Extension reloaded — stale content script.
+  }
 }
 
 export async function getFabHideReason(hostname: string): Promise<FabHideReason> {
+  if (!isExtensionContextValid()) return "none";
   const host = normalizeHostname(hostname);
-  const local = await chrome.storage.local.get([FAB_HIDE_GLOBAL_KEY, FAB_SNOOZE_UNTIL_KEY]);
-  if (local[FAB_HIDE_GLOBAL_KEY] === true) return "global";
+  try {
+    const local = await chrome.storage.local.get([FAB_HIDE_GLOBAL_KEY, FAB_SNOOZE_UNTIL_KEY]);
+    if (local[FAB_HIDE_GLOBAL_KEY] === true) return "global";
 
-  const until = local[FAB_SNOOZE_UNTIL_KEY];
-  if (typeof until === "number" && until > Date.now()) return "snooze";
-  if (typeof until === "number" && until <= Date.now()) {
-    await chrome.storage.local.remove(FAB_SNOOZE_UNTIL_KEY);
+    const until = local[FAB_SNOOZE_UNTIL_KEY];
+    if (typeof until === "number" && until > Date.now()) return "snooze";
+    if (typeof until === "number" && until <= Date.now()) {
+      await chrome.storage.local.remove(FAB_SNOOZE_UNTIL_KEY);
+    }
+
+    const sessionHosts = await readSessionHiddenHosts();
+    if (sessionHosts.includes(host)) return "site_session";
+    return "none";
+  } catch {
+    return "none";
   }
-
-  const sessionHosts = await readSessionHiddenHosts();
-  if (sessionHosts.includes(host)) return "site_session";
-  return "none";
 }
 
 export async function shouldShowFab(hostname: string): Promise<boolean> {
