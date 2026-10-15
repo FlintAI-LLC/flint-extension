@@ -210,6 +210,22 @@ html.flint-in-drawer .popup-header:not(:has(.btn-ghost)) {
   border-color: #e5e7eb;
 }
 
+.store-lag-notice {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #5c4d00;
+  background: #fff8e6;
+  border: 1px solid #f0d878;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.store-lag-notice a {
+  color: #92400e;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .hint-compact {
   font-size: 11px;
   text-align: center;
