@@ -11,3 +11,8 @@ key.pem
 *.pem
 web-ext-artifacts/
 *.zip
+
+# Ad-hoc live-production diagnostic scripts — never commit (may embed
+# throwaway smoke-test account credentials via env var fallbacks).
+autofill-banner-check.mjs
+autofill-live-test.mjs

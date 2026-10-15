@@ -27,7 +27,7 @@ import {
 import { extensionInvalidatedMessage, isExtensionContextValid } from "../src/extensionContext.js";
 import { getExtensionVersion } from "../src/extensionVersion.js";
 import { resolveHostTab } from "../src/resolveHostTab.js";
-import { FLINT_JD_REFRESH_EVENT } from "../src/panelMessages.js";
+import { FLINT_FLOATING_COLLAPSE, FLINT_JD_REFRESH_EVENT } from "../src/panelMessages.js";
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
 import {
   pickBetterJd,
@@ -859,6 +859,15 @@ export function Popup(): React.ReactElement {
         },
       );
     });
+
+    // Every outcome above (offer, picker, result banner, or "no form
+    // detected" message) renders in the page-level overlay, not here — and
+    // the drawer's stacking context sits above that overlay, hiding it from
+    // the user. Collapse the drawer so the on-page panel becomes visible.
+    // No-op outside the floating drawer (e.g. a plain browser-action popup).
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: FLINT_FLOATING_COLLAPSE }, "*");
+    }
   }
 
   function renderAutofillBetaDisclaimer(): React.ReactNode {

@@ -16,7 +16,11 @@ import {
   findMyGreenhouseUiMountRoot,
   reparentFlintUiHost,
 } from "../../src/myGreenhouseUiMount.js";
-import { FLINT_CONTENT_SOURCE, FLINT_MYGH_JOB_CHANGED } from "../../src/panelMessages.js";
+import {
+  FLINT_CONTENT_SOURCE,
+  FLINT_FLOATING_COLLAPSE,
+  FLINT_MYGH_JOB_CHANGED,
+} from "../../src/panelMessages.js";
 import {
   currentPageHostname,
   hideFabFor24Hours,
@@ -28,7 +32,7 @@ import { getPanelExpanded, setPanelExpanded } from "./panelState.js";
 
 const HOST_ATTRIBUTE = "data-flint-floating-shell";
 const LISTENERS_ATTRIBUTE = "data-flint-floating-listeners";
-const COLLAPSE_MESSAGE_TYPE = "FLINT_FLOATING_COLLAPSE";
+const COLLAPSE_MESSAGE_TYPE = FLINT_FLOATING_COLLAPSE;
 const DRAWER_WIDTH_PX = 360;
 /** Single active controller for document-level listeners (avoids stacked handlers). */
 let activeShell: FloatingShell | null = null;

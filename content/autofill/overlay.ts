@@ -149,6 +149,8 @@ function reviewStatusLabel(status: FieldFillOutcome["status"]): string {
       return "Needs review";
     case "not_found":
       return "Not found";
+    case "fill_rejected":
+      return "Didn't save — enter manually";
     case "not_applicable_file_upload":
       return "Attach manually";
     default:
@@ -161,6 +163,7 @@ function fieldsNeedingAttention(fields: FieldFillOutcome[]): FieldFillOutcome[] 
     (f) =>
       f.status === "filled_needs_review" ||
       f.status === "not_found" ||
+      f.status === "fill_rejected" ||
       f.status === "not_applicable_file_upload",
   );
 }

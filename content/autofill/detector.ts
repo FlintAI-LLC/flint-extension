@@ -14,11 +14,15 @@ export type Platform =
 
 export type FieldConcept =
   | "name"
+  | "first_name"
+  | "last_name"
   | "email"
   | "phone"
   | "resume"
   | "cover_letter"
   | "linkedin_url"
+  | "website_url"
+  | "github_url"
   | "work_authorization"
   | "eeo"
   | "address_line1"
@@ -45,12 +49,26 @@ export interface DetectionResult {
 }
 
 const FIELD_CONCEPT_SIGNALS: Record<FieldConcept, readonly string[]> = {
-  name: ["name", "full name", "first name", "last name", "legal name", "given name", "family name"],
+  // Deliberately generic/short — only wins when a more specific concept
+  // (first_name/last_name) does not also match the same label. Covers a
+  // single combined "Full Name" field.
+  name: ["full name", "legal name", "name"],
+  first_name: ["first name", "given name", "legal first name", "firstname"],
+  last_name: ["last name", "family name", "surname", "legal last name", "lastname"],
   email: ["email", "e-mail", "email address"],
   phone: ["phone", "mobile", "telephone", "cell"],
   resume: ["resume", "cv", "curriculum vitae", "résumé"],
   cover_letter: ["cover letter", "coverletter", "motivation letter"],
   linkedin_url: ["linkedin", "linkedin profile", "linkedin url"],
+  website_url: [
+    "portfolio website",
+    "personal website",
+    "portfolio url",
+    "portfolio",
+    "personal site",
+    "website",
+  ],
+  github_url: ["github url", "github profile", "github"],
   work_authorization: [
     "work authorization",
     "work authorisation",
@@ -117,6 +135,8 @@ const KNOWN_ATS_MIN_INPUTS = 4;
 const KNOWN_ATS_MIN_CONCEPTS = 3;
 const STRONG_IDENTITY_CONCEPTS: ReadonlySet<FieldConcept> = new Set<FieldConcept>([
   "name",
+  "first_name",
+  "last_name",
   "email",
   "phone",
 ]);
@@ -297,13 +317,15 @@ function buildElementSelector(el: Element): string {
 
 /** Maps AutofillFieldPayload/selector-map keys to detector concepts. Shared with fill-engine. */
 export const FIELD_KEY_TO_CONCEPT: Record<string, FieldConcept> = {
-  first_name: "name",
-  last_name: "name",
+  first_name: "first_name",
+  last_name: "last_name",
   email: "email",
   phone: "phone",
   resume: "resume",
   cover_letter: "cover_letter",
   linkedin_url: "linkedin_url",
+  website_url: "website_url",
+  github_url: "github_url",
   work_authorization: "work_authorization",
 };
 

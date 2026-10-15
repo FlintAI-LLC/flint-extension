@@ -30,6 +30,14 @@
         "selector": "[name='job_application[urls][LinkedIn]']"
       },
       {
+        "key": "website_url",
+        "selector": "[name='job_application[urls][Website]'], [name='job_application[urls][Portfolio]']"
+      },
+      {
+        "key": "github_url",
+        "selector": "[name='job_application[urls][GitHub]']"
+      },
+      {
         "key": "work_authorization",
         "selector": "[name='job_application[answers][work_authorization]']"
       }

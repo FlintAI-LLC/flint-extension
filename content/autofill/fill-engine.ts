@@ -56,39 +56,66 @@ function resolveElement(
   key: string,
   payloadSelector: string,
   candidates: FieldCandidate[],
-): { el: Element | null; matchSource: MatchSource } {
+): { el: Element | null; matchSource: MatchSource; selector: string | null } {
   const mapped = selectorForKey(platform, key);
   if (mapped) {
     const el = querySelectorDeep(root, mapped);
-    if (el) return { el, matchSource: "selector_map" };
+    if (el) return { el, matchSource: "selector_map", selector: mapped };
   }
 
   if (payloadSelector) {
     const el = querySelectorDeep(root, payloadSelector);
-    if (el) return { el, matchSource: "payload" };
+    if (el) return { el, matchSource: "payload", selector: payloadSelector };
   }
 
   const heuristic = candidateSelectorForKey(candidates, key);
   if (heuristic) {
     const el = querySelectorDeep(root, heuristic);
-    if (el) return { el, matchSource: "heuristic" };
+    if (el) return { el, matchSource: "heuristic", selector: heuristic };
   }
 
-  return { el: null, matchSource: "heuristic" };
+  return { el: null, matchSource: "heuristic", selector: null };
 }
 
-function writeFieldValue(el: Element, value: string): boolean {
+/**
+ * Loose match: the written value is accepted as long as it actually landed
+ * in the control. Framework-controlled inputs (React etc.) sometimes revert
+ * a programmatic write back to their own tracked state — this is what lets
+ * us tell "it stuck" from "it silently bounced", instead of always trusting
+ * our own write call.
+ */
+function valueWasAccepted(actual: string, expected: string): boolean {
+  const a = actual.trim().toLowerCase();
+  const e = expected.trim().toLowerCase();
+  if (!e) return true;
+  if (!a) return false;
+  return a === e || a.includes(e) || e.includes(a);
+}
+
+interface WriteOutcome {
+  attempted: boolean;
+  verified: boolean;
+}
+
+function writeFieldValue(el: Element, value: string): WriteOutcome {
   if (el instanceof HTMLInputElement && el.type.toLowerCase() === "file") {
-    return false;
+    return { attempted: false, verified: false };
   }
   if (el instanceof HTMLSelectElement) {
-    return setSelectByVisibleText(el, value);
+    // Compare against the option's own `.value` (what we actually set), not
+    // the free-text `value` we were given — an option's value attribute
+    // commonly differs from its visible text (`<option value="US">United
+    // States of America</option>`), and loosely comparing against the free
+    // text would misreport a correct selection as rejected.
+    const matchedValue = setSelectByVisibleText(el, value);
+    if (matchedValue === null) return { attempted: false, verified: false };
+    return { attempted: true, verified: el.value === matchedValue };
   }
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     setTextControlValue(el, value);
-    return true;
+    return { attempted: true, verified: valueWasAccepted(el.value, value) };
   }
-  return false;
+  return { attempted: false, verified: false };
 }
 
 function statusForMatch(matchSource: MatchSource, isFileInput: boolean): FieldFillStatus {
@@ -114,11 +141,21 @@ export function fillApplicationForm(
   const fields: FieldFillOutcome[] = [];
 
   for (const field of payload.fields) {
-    const { el, matchSource } = resolveElement(root, platform, field.key, field.selector, candidates);
-    const reportedSelector = selectorForKey(platform, field.key) ?? field.selector;
+    const { el, matchSource, selector: resolvedSelector } = resolveElement(
+      root,
+      platform,
+      field.key,
+      field.selector,
+      candidates,
+    );
+    // Report the selector that actually resolved the element, never a
+    // static map entry that didn't match — a stale reported selector is
+    // exactly what makes "jump to field" target nothing on pages whose DOM
+    // has drifted from the selector map (e.g. a redesigned ATS layout).
+    const reportedSelector = resolvedSelector ?? (field.selector || null);
 
     if (!el) {
-      fields.push({ key: field.key, selector: field.selector || null, status: "not_found" });
+      fields.push({ key: field.key, selector: reportedSelector, status: "not_found" });
       continue;
     }
 
@@ -128,9 +165,21 @@ export function fillApplicationForm(
       continue;
     }
 
-    const written = writeFieldValue(el, field.value);
-    if (!written) {
+    const outcome = writeFieldValue(el, field.value);
+    if (!outcome.attempted) {
       fields.push({ key: field.key, selector: reportedSelector, status: "not_found" });
+      continue;
+    }
+    if (!outcome.verified) {
+      // We wrote to the right element but the page did not keep the value
+      // (e.g. a controlled component bounced it back to empty). Never report
+      // this as filled — the percentage must reflect what actually landed.
+      fields.push({
+        key: field.key,
+        selector: reportedSelector,
+        status: "fill_rejected",
+        value_preview: previewValue(field.value),
+      });
       continue;
     }
 
@@ -142,5 +191,57 @@ export function fillApplicationForm(
     });
   }
 
+  applyCombinedNameFallback(fields, payload, candidates, root);
+
   return { fields, percent_filled: computePercentFilled(fields) };
+}
+
+/**
+ * Some ATS forms — and the generic/unknown-platform heuristic path — expose
+ * a single combined "Full Name" field instead of separate first/last
+ * inputs. The detector keeps a dedicated "name" concept for exactly this
+ * case, but first_name/last_name never resolve to it on their own (each
+ * only matches its own concept), so without this fallback such a form is
+ * silently left with an empty name instead of filled. Mutates `fields` in
+ * place when (and only when) both keys came back not_found and a combined
+ * field is actually present.
+ */
+function applyCombinedNameFallback(
+  fields: FieldFillOutcome[],
+  payload: AutofillPayload,
+  candidates: FieldCandidate[],
+  root: ParentNode,
+): void {
+  const firstIdx = fields.findIndex((f) => f.key === "first_name");
+  const lastIdx = fields.findIndex((f) => f.key === "last_name");
+  if (firstIdx === -1 || lastIdx === -1) return;
+  if (fields[firstIdx].status !== "not_found" || fields[lastIdx].status !== "not_found") return;
+
+  const combinedCandidate = candidates.find((c) => c.concept === "name");
+  if (!combinedCandidate) return;
+  const el = querySelectorDeep(root, combinedCandidate.selector);
+  if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
+
+  const firstValue = payload.fields.find((f) => f.key === "first_name")?.value ?? "";
+  const lastValue = payload.fields.find((f) => f.key === "last_name")?.value ?? "";
+  const combinedValue = `${firstValue} ${lastValue}`.trim();
+  if (!combinedValue) return;
+
+  setTextControlValue(el, combinedValue);
+  const status: FieldFillStatus = valueWasAccepted(el.value, combinedValue)
+    ? "filled_needs_review"
+    : "fill_rejected";
+  const preview = previewValue(combinedValue);
+  fields[firstIdx] = {
+    key: "first_name",
+    selector: combinedCandidate.selector,
+    status,
+    value_preview: preview,
+  };
+  fields[lastIdx] = {
+    key: "last_name",
+    selector: combinedCandidate.selector,
+    status,
+    value_preview: preview,
+  };
 }
