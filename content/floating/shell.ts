@@ -7,6 +7,10 @@
  * live in chrome.storage exactly as it does for the toolbar popup today.
  */
 import { PRODUCT_NAME, wordmarkUrl } from "../../src/brand.js";
+import {
+  isExtensionContextValid,
+  voidUnlessContextInvalidated,
+} from "../../src/extensionContext.js";
 import { isolateExtensionUiClicks } from "../../src/extensionClickIsolation.js";
 import {
   findMyGreenhouseUiMountRoot,
@@ -250,7 +254,8 @@ function ensureStorageListener(): void {
   if (storageListenerRegistered) return;
   storageListenerRegistered = true;
   chrome.storage.onChanged.addListener(() => {
-    void activeShell?.refreshFabVisibility();
+    if (!isExtensionContextValid()) return;
+    voidUnlessContextInvalidated(activeShell?.refreshFabVisibility() ?? Promise.resolve());
   });
 }
 
@@ -296,7 +301,7 @@ export class FloatingShell {
       reparentFlintUiHost(existing);
       activeShell = this;
       ensureDocumentListeners();
-      void this.refreshFabVisibility();
+      voidUnlessContextInvalidated(this.refreshFabVisibility());
       return;
     }
 
@@ -322,7 +327,7 @@ export class FloatingShell {
     activeShell = this;
     ensureDocumentListeners();
     ensureStorageListener();
-    void this.refreshFabVisibility();
+    voidUnlessContextInvalidated(this.refreshFabVisibility());
   }
 
   getHost(): HTMLElement | null {
@@ -339,7 +344,7 @@ export class FloatingShell {
     this.expanded = true;
     if (this.drawerEl) this.drawerEl.hidden = false;
     if (this.fabWrap) this.fabWrap.hidden = true;
-    void setPanelExpanded(true);
+    voidUnlessContextInvalidated(setPanelExpanded(true));
     // Re-extract only after the user picks another job — not on every FAB reopen.
     if (this.pendingJobRefresh) {
       this.reloadPanelFrame("job-changed");
@@ -368,8 +373,8 @@ export class FloatingShell {
   collapse(): void {
     this.expanded = false;
     if (this.drawerEl) this.drawerEl.hidden = true;
-    void setPanelExpanded(false);
-    void this.refreshFabVisibility();
+    voidUnlessContextInvalidated(setPanelExpanded(false));
+    voidUnlessContextInvalidated(this.refreshFabVisibility());
   }
 
   toggle(): void {
@@ -390,13 +395,19 @@ export class FloatingShell {
   }
 
   async refreshFabVisibility(): Promise<void> {
+    if (!isExtensionContextValid()) return;
     if (!this.fabWrap || !this.host?.isConnected) return;
     if (this.expanded) {
       this.fabWrap.hidden = true;
       this.closeFabMenu();
       return;
     }
-    const show = await shouldShowFab(currentPageHostname());
+    let show = true;
+    try {
+      show = await shouldShowFab(currentPageHostname());
+    } catch {
+      return;
+    }
     if (!this.fabWrap || !this.host?.isConnected) return;
     this.fabWrap.hidden = !show;
     if (!show) this.closeFabMenu();

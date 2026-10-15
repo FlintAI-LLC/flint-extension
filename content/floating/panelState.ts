@@ -1,3 +1,5 @@
+import { isExtensionContextValid } from "../../src/extensionContext.js";
+
 /**
  * Persists whether the floating drawer is expanded so the panel state
  * survives a content-script remount (SPA navigation, tab reload) within the
@@ -15,6 +17,7 @@ function getSessionArea(): chrome.storage.StorageArea | null {
 }
 
 export async function getPanelExpanded(): Promise<boolean> {
+  if (!isExtensionContextValid()) return false;
   const session = getSessionArea();
   if (session) {
     try {
@@ -35,6 +38,7 @@ export async function getPanelExpanded(): Promise<boolean> {
 }
 
 export async function setPanelExpanded(expanded: boolean): Promise<void> {
+  if (!isExtensionContextValid()) return;
   const session = getSessionArea();
   if (session) {
     try {
