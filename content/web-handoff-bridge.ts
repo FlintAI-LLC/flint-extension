@@ -1,4 +1,24 @@
+import {
+  buildPresenceResponse,
+  shouldHandlePresenceMessage,
+} from "./extensionPresenceBridge.js";
+
 /** Lets the extension popup adopt a Flint Apply tab's signed-in web session. */
+
+window.addEventListener("message", (event: MessageEvent) => {
+  const request = shouldHandlePresenceMessage({
+    origin: event.origin,
+    source: event.source,
+    data: event.data,
+    pageOrigin: window.location.origin,
+    pageWindow: window,
+  });
+  if (!request) return;
+  window.postMessage(
+    buildPresenceResponse(request.requestId, chrome.runtime.getManifest().version),
+    window.location.origin,
+  );
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "FLINT_EXTENSION_WEB_HANDOFF") {
