@@ -41,6 +41,7 @@ import {
 } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
 import { isFlintApplyApplyIntent } from "../src/applyIntent.js";
+import { AUTOFILL_BETA_EXPECTATION_SHORT } from "../src/autofillBetaCopy.js";
 import { isAutofillEnabled, isAutofillHost, isLinkedInHost } from "../src/autofillFlags.js";
 import {
   getFabHideReason,
@@ -830,21 +831,29 @@ export function Popup(): React.ReactElement {
       chrome.tabs.sendMessage(
         tab.id!,
         { type: "PROBE_AUTOFILL", jdId: savedJdId ?? undefined },
-        (response: { ok?: boolean; error?: string } | undefined) => {
+        (response: { ok?: boolean; error?: string; hint?: string } | undefined) => {
           if (chrome.runtime.lastError) {
             setAutofillHint(
               isAutofillHost(tab.url)
                 ? "Reload the application page, then try Autofill again."
                 : "Open a supported application form (Greenhouse, Lever, Ashby, Workday, and similar), then try Autofill again.",
             );
+          } else if (response?.hint) {
+            setAutofillHint(response.hint);
           } else if (response?.error === "no_form") {
-            setAutofillHint("Open the application form page, then try Autofill again.");
+            setAutofillHint(
+              "Wait until the apply form shows fields (name, email), then try Autofill again.",
+            );
           } else if (response?.error === "Autofill disabled") {
             setAutofillHint("Autofill is turned off for this extension install.");
           } else if (response?.error === "no_sessions") {
             setAutofillHint("Tailor your resume in Flint Apply first, then try Autofill again.");
           } else if (response?.error === "dismissed") {
             setAutofillHint("Autofill was dismissed on this page — reload the tab, then try again.");
+          } else if (response?.error === "skipped") {
+            setAutofillHint(
+              "See the Flint panel on the page (bottom-right). If it is missing, reload and try again.",
+            );
           }
           resolve();
         },
@@ -852,12 +861,17 @@ export function Popup(): React.ReactElement {
     });
   }
 
+  function renderAutofillBetaDisclaimer(): React.ReactNode {
+    if (!tabUrl || !isAutofillHost(tabUrl)) return null;
+    return <p className="hint hint-compact">{AUTOFILL_BETA_EXPECTATION_SHORT}</p>;
+  }
+
   function renderAutofillButton(): React.ReactElement {
     const autofillPage = isAutofillHost(tabUrl);
     const linkedInJobsPage = isLinkedInHost(tabUrl) && autofillPage;
     const disabled = !autofillEnabled || !autofillPage;
 
-    let title = "Fill the application form from your tailored resume";
+    let title = "Fill a few contact fields from your tailored resume (beta)";
     if (!autofillEnabled) {
       title = "Autofill is disabled";
     } else if (!autofillPage) {
@@ -1110,9 +1124,10 @@ export function Popup(): React.ReactElement {
         <p className="hint leading-relaxed">
           You opened this page from {PRODUCT_NAME} after tailoring. Click the employer&apos;s{" "}
           <strong>Apply</strong> button on the page to open the application form — Flint Apply
-          will prompt you on the form to autofill from your tailored resume.
+          can then offer Autofill (beta) on the form.
         </p>
         {renderAutofillButton()}
+        {renderAutofillBetaDisclaimer()}
         {autofillHint && <p className="hint hint-compact">{autofillHint}</p>}
         <p className="hint hint-compact">
           Already on the application form? Click Autofill (beta) above. You do not need to save the
@@ -1179,6 +1194,7 @@ export function Popup(): React.ReactElement {
           Paste job description
         </button>
         {renderAutofillButton()}
+        {renderAutofillBetaDisclaimer()}
         {autofillHint && <p className="hint hint-compact">{autofillHint}</p>}
         <button
           type="button"

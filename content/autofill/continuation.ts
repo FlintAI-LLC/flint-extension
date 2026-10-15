@@ -34,6 +34,7 @@ function formStructureSignature(root: ParentNode): string {
         htmlEl.getAttribute("name") ?? "",
         htmlEl.getAttribute("id") ?? "",
         htmlEl.getAttribute("type") ?? "",
+        htmlEl.getAttribute("data-automation-id") ?? "",
       ].join("|"),
     );
   }

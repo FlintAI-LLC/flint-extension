@@ -1,3 +1,4 @@
+import { AUTOFILL_BETA_EXPECTATION_SHORT } from "../../src/autofillBetaCopy.js";
 import type { FieldFillOutcome, FillResult } from "./types.js";
 import { countHighConfidenceFilled } from "./types.js";
 import { isolateExtensionUiClicks } from "../../src/extensionClickIsolation.js";
@@ -239,6 +240,10 @@ export class AutofillOverlay {
       subtitle.className = "subtitle";
       subtitle.textContent = `${context.title} · ${context.company}`;
 
+      const betaNote = document.createElement("p");
+      betaNote.className = "note";
+      betaNote.textContent = AUTOFILL_BETA_EXPECTATION_SHORT;
+
       const actions = this.buildActions([
         {
           label: "Autofill",
@@ -252,7 +257,7 @@ export class AutofillOverlay {
         },
       ]);
 
-      panel.append(heading, subtitle, actions);
+      panel.append(heading, subtitle, betaNote, actions);
     });
     this.view = "offer";
   }

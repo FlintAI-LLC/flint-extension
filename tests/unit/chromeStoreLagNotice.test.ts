@@ -13,6 +13,6 @@ describe("shouldShowChromeStoreLagNotice", () => {
 
   it("hides nudge at or above recommended dev build", () => {
     assert.equal(shouldShowChromeStoreLagNotice(RECOMMENDED_DEV_BUILD_VERSION), false);
-    assert.equal(shouldShowChromeStoreLagNotice("0.1.42"), false);
+    assert.equal(shouldShowChromeStoreLagNotice("0.1.44"), false);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isAutofillHost,
+  isWorkdayApplyUrl,
   isGreenhouseHost,
   isLinkedInHost,
 } from "../../src/autofillFlags.js";
@@ -38,5 +39,15 @@ describe("autofillFlags", () => {
     expect(isAutofillHost("https://www.linkedin.com/feed/")).toBe(false);
     expect(isAutofillHost("https://www.linkedin.com/in/someone")).toBe(false);
     expect(isAutofillHost(undefined)).toBe(false);
+  });
+
+  it("isWorkdayApplyUrl matches apply flows only", () => {
+    expect(
+      isWorkdayApplyUrl(
+        "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Reston/Eng/apply/applyManually",
+      ),
+    ).toBe(true);
+    expect(isWorkdayApplyUrl("https://workday.wd5.myworkdayjobs.com/en-US/careers")).toBe(false);
+    expect(isWorkdayApplyUrl("https://boards.greenhouse.io/acme/jobs/1")).toBe(false);
   });
 });

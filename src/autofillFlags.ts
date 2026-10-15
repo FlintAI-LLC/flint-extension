@@ -15,6 +15,23 @@ export function isGreenhouseHost(url: string | undefined): boolean {
   }
 }
 
+/** True on Workday multi-step apply URLs (not job search or login). */
+export function isWorkdayApplyUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== "myworkdayjobs.com" && !host.endsWith(".myworkdayjobs.com")) {
+      return false;
+    }
+    const path = parsed.pathname.toLowerCase();
+    const search = parsed.search.toLowerCase();
+    return path.includes("/apply/") || search.includes("applymanually");
+  } catch {
+    return false;
+  }
+}
+
 export function isLinkedInHost(url: string | undefined): boolean {
   if (!url) return false;
   try {

@@ -1,6 +1,11 @@
 import { PRODUCT_NAME } from "../../src/brand.js";
 import { observeApplicationSteps } from "./continuation.js";
 import { detectApplicationForm, observeApplicationForm } from "./detector.js";
+import {
+  resolveAutofillSurface,
+  resolveAutofillSurfaceWithRetry,
+  type ResolvedAutofillSurface,
+} from "./surface-root.js";
 import { AutofillOverlay } from "./overlay.js";
 import {
   autofillWithIframeFallback,
@@ -9,7 +14,7 @@ import {
 } from "./iframe-bridge.js";
 import type { AutofillPayload } from "./types.js";
 import type { TailoredSessionOption } from "../../src/autofillApi.js";
-import { isAutofillEnabled } from "../../src/autofillFlags.js";
+import { isAutofillEnabled, isWorkdayApplyUrl } from "../../src/autofillFlags.js";
 import {
   findMyGreenhouseUiMountRoot,
   reparentFlintUiHost,
@@ -40,11 +45,16 @@ function hasMyGreenhouseApplySection(doc: Document): boolean {
   return false;
 }
 
-function isAutofillSurface(hostname: string): boolean {
-  const detection = detectApplicationForm(document.body, hostname);
-  if (detection.isApplicationForm) return true;
-  if (hostname !== "my.greenhouse.io") return false;
-  return hasGreenhouseApplyIframe(document) || hasMyGreenhouseApplySection(document);
+function getAutofillSurface(doc: Document, host: string): ResolvedAutofillSurface | null {
+  const resolved = resolveAutofillSurface(doc, host);
+  if (resolved) return resolved;
+  if (host !== "my.greenhouse.io") return null;
+  if (!hasGreenhouseApplyIframe(doc) && !hasMyGreenhouseApplySection(doc)) return null;
+  return { root: doc.body, detection: detectApplicationForm(doc.body, host) };
+}
+
+function isAutofillSurface(doc: Document, host: string): boolean {
+  return getAutofillSurface(doc, host) !== null;
 }
 
 export type StepChangeAction = "offer" | "refill" | "abandon";
@@ -148,8 +158,12 @@ export function startAutofillController(): void {
     recentSessions = await requestRecentSessions();
   }
 
-  async function runAutofill(jdId: string): Promise<void> {
+  async function runAutofill(jdId: string, options?: { delayMs?: number }): Promise<void> {
     if (!autofillEnabled) return;
+
+    if (options?.delayMs && options.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    }
 
     activeJdId = jdId;
     const response = await requestAutofillPayload(jdId);
@@ -165,12 +179,19 @@ export function startAutofillController(): void {
       return;
     }
 
-    const detection = detectApplicationForm(document.body, hostname);
+    const surface = getAutofillSurface(document, hostname);
+    if (!surface) {
+      overlay.showMessage(
+        "No application form detected",
+        "Wait for the form to finish loading, then try Autofill again.",
+      );
+      return;
+    }
     const result = await autofillWithIframeFallback(
       response.payload,
       hostname,
-      detection.fieldCandidates,
-      document.body,
+      surface.detection.fieldCandidates,
+      surface.root,
     );
 
     filledThisStep = true;
@@ -205,12 +226,12 @@ export function startAutofillController(): void {
     }
   }
 
-  function maybeOffer(preferredJdId?: string): OfferOutcome {
+  function maybeOffer(preferredJdId?: string, force = false): OfferOutcome {
     mountOverlay();
     if (!autofillEnabled) return "skipped";
-    if (!isAutofillSurface(hostname)) return "not_surface";
+    if (!isAutofillSurface(document, hostname)) return "not_surface";
     if (overlay.isDismissedForPage()) return "dismissed";
-    if (offering || filledThisStep) return "skipped";
+    if (!force && (offering || filledThisStep)) return "skipped";
     if (recentSessions.length === 0) return "no_sessions";
 
     offering = true;
@@ -231,17 +252,23 @@ export function startAutofillController(): void {
       }
 
       await refreshSessions();
-      if (!isAutofillSurface(hostname)) {
+      mountOverlay();
+      const surface = await resolveAutofillSurfaceWithRetry(document, hostname, {
+        attempts: 6,
+        delayMs: 400,
+      });
+      if (!surface && !isAutofillSurface(document, hostname)) {
         overlay.showMessage(
           "No application form detected",
-          "Open the job's apply form (scroll to Apply for this job), then try Autofill again.",
+          "Wait for the Workday form to finish loading (name and email fields visible), then try Autofill again.",
         );
         sendResponse({ ok: false, error: "no_form" });
         return;
       }
 
       filledThisStep = false;
-      const outcome = maybeOffer(message.jdId);
+      offering = false;
+      const outcome = maybeOffer(message.jdId, true);
       if (outcome === "no_sessions") {
         overlay.showMessage(
           "No tailored resume yet",
@@ -267,10 +294,14 @@ export function startAutofillController(): void {
         return;
       }
       if (outcome === "skipped") {
+        overlay.showMessage(
+          "Autofill is waiting",
+          "If you already filled this step, advance to the next page or reload and try again.",
+        );
         sendResponse({ ok: false, error: "skipped" });
         return;
       }
-      sendResponse({ ok: true });
+      sendResponse({ ok: true, hint: "Check the Flint panel at the bottom-right of the page." });
     })();
 
     return true;
@@ -285,23 +316,33 @@ export function startAutofillController(): void {
       hostname,
       onStepChange: () => {
         filledThisStep = false;
+        const pageUrl = window.location.href;
+        const onWorkdayApply = isWorkdayApplyUrl(pageUrl);
+        const surface = isAutofillSurface(document, hostname);
         // Surface is re-verified on every step change: completion copy no
         // longer clears activeJdId, so this is what stops an SPA navigation
         // from autofilling a non-application page.
-        const action = decideStepChangeAction(
-          activeJdId,
-          activeJdId ? isAutofillSurface(hostname) : false,
-        );
+        const action = decideStepChangeAction(activeJdId, activeJdId ? surface : false);
         if (action === "offer") {
           maybeOffer();
           return;
         }
         if (action === "abandon") {
+          // Workday "My Experience" and similar steps have no name/email fields,
+          // so detection returns false — but we are still inside /apply/. Do not
+          // drop the session or leave the step-1 result panel frozen.
+          if (activeJdId && onWorkdayApply) {
+            overlay.showMessage(
+              "New application step",
+              "Flint only autofills contact fields from your tailored resume today — not work history, resume upload, or dropdowns like “How did you hear about us?”. Fill this step manually, or click Autofill (beta) again if contact fields appear.",
+            );
+            return;
+          }
           overlay.hide();
           activeJdId = null;
           return;
         }
-        void runAutofill(activeJdId as string);
+        void runAutofill(activeJdId as string, { delayMs: onWorkdayApply ? 700 : 0 });
       },
       onApplicationComplete: () => {
         overlay.hide();
