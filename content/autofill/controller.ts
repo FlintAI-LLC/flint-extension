@@ -47,6 +47,25 @@ function isAutofillSurface(hostname: string): boolean {
   return hasGreenhouseApplyIframe(document) || hasMyGreenhouseApplySection(document);
 }
 
+export type StepChangeAction = "offer" | "refill" | "abandon";
+
+/**
+ * What to do when the page structure changes mid-application.
+ *
+ * `abandon` is the security-critical case: once a fill has been confirmed we
+ * hold an active session, and an SPA navigation to a search, login or profile
+ * page must drop it rather than silently writing the user's details into
+ * whatever fields happen to be there.
+ */
+export function decideStepChangeAction(
+  activeJdId: string | null,
+  isSurface: boolean,
+): StepChangeAction {
+  if (!activeJdId) return "offer";
+  if (!isSurface) return "abandon";
+  return "refill";
+}
+
 function requestRecentSessions(): Promise<TailoredSessionOption[]> {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: "FETCH_RECENT_TAILORED_SESSIONS" }, (res: RecentSessionsResponse | undefined) => {
@@ -266,11 +285,23 @@ export function startAutofillController(): void {
       hostname,
       onStepChange: () => {
         filledThisStep = false;
-        if (!activeJdId) {
+        // Surface is re-verified on every step change: completion copy no
+        // longer clears activeJdId, so this is what stops an SPA navigation
+        // from autofilling a non-application page.
+        const action = decideStepChangeAction(
+          activeJdId,
+          activeJdId ? isAutofillSurface(hostname) : false,
+        );
+        if (action === "offer") {
           maybeOffer();
           return;
         }
-        void runAutofill(activeJdId);
+        if (action === "abandon") {
+          overlay.hide();
+          activeJdId = null;
+          return;
+        }
+        void runAutofill(activeJdId as string);
       },
       onApplicationComplete: () => {
         overlay.hide();

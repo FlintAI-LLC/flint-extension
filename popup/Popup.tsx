@@ -17,6 +17,7 @@ import {
 } from "../src/urls.js";
 import { PRODUCT_NAME, FLINT_DESKTOP_NAME, FLINT_DESKTOP_HANDOFF_ENABLED } from "../src/brand.js";
 import { PopupHeader } from "./BrandWordmark.js";
+import { ChromeStoreLagNotice } from "./ChromeStoreLagNotice.js";
 import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import {
   isMyGreenhouseHost,
@@ -39,6 +40,7 @@ import {
   truncateJdText,
 } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
+import { isFlintApplyApplyIntent } from "../src/applyIntent.js";
 import { isAutofillEnabled, isAutofillHost, isLinkedInHost } from "../src/autofillFlags.js";
 import {
   getFabHideReason,
@@ -237,7 +239,16 @@ async function _extractJdFromTab(tabId: number, tabUrl?: string): Promise<Extrac
   return null;
 }
 
-type View = "loading" | "login" | "not_on_job" | "manual_entry" | "job_ready" | "saving" | "saved" | "error";
+type View =
+  | "loading"
+  | "login"
+  | "not_on_job"
+  | "manual_entry"
+  | "job_ready"
+  | "apply_return"
+  | "saving"
+  | "saved"
+  | "error";
 
 const FLINT_NOT_INSTALLED_TIMEOUT_MS = 3000;
 const RESTRICTED_URL_PREFIXES = [
@@ -387,6 +398,12 @@ export function Popup(): React.ReactElement {
       }
       if (initCancelledRef.current) return;
       chrome.runtime.sendMessage({ type: "FETCH_RECENT_TAILORED_SESSIONS" });
+      const tab = await resolveHostTab();
+      setTabUrl(tab?.url);
+      if (tab?.url && isFlintApplyApplyIntent(tab.url) && isAutofillHost(tab.url)) {
+        setView("apply_return");
+        return;
+      }
       setLoadingStatus("Reading the job posting…");
       await _extractJD();
     } catch (err) {
@@ -801,7 +818,6 @@ export function Popup(): React.ReactElement {
   }
 
   async function handleAutofillBeta(): Promise<void> {
-    if (!savedJdId) return;
     setAutofillHint(null);
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -813,7 +829,7 @@ export function Popup(): React.ReactElement {
     await new Promise<void>((resolve) => {
       chrome.tabs.sendMessage(
         tab.id!,
-        { type: "PROBE_AUTOFILL", jdId: savedJdId },
+        { type: "PROBE_AUTOFILL", jdId: savedJdId ?? undefined },
         (response: { ok?: boolean; error?: string } | undefined) => {
           if (chrome.runtime.lastError) {
             setAutofillHint(
@@ -997,6 +1013,7 @@ export function Popup(): React.ReactElement {
             Log in
           </button>
         </form>
+        <ChromeStoreLagNotice />
       </div>
     );
   }
@@ -1012,6 +1029,7 @@ export function Popup(): React.ReactElement {
         <button className="btn-secondary" onClick={() => handleOpenManualEntry()}>
           Paste job description
         </button>
+        <ChromeStoreLagNotice />
       </div>
     );
   }
@@ -1085,6 +1103,26 @@ export function Popup(): React.ReactElement {
     );
   }
 
+  if (view === "apply_return") {
+    return (
+      <div className="popup">
+        <PopupHeader>{renderAccountControls()}</PopupHeader>
+        <p className="hint leading-relaxed">
+          You opened this page from {PRODUCT_NAME} after tailoring. Click the employer&apos;s{" "}
+          <strong>Apply</strong> button on the page to open the application form — Flint Apply
+          will prompt you on the form to autofill from your tailored resume.
+        </p>
+        {renderAutofillButton()}
+        {autofillHint && <p className="hint hint-compact">{autofillHint}</p>}
+        <p className="hint hint-compact">
+          Already on the application form? Click Autofill (beta) above. You do not need to save the
+          job description again.
+        </p>
+        <ChromeStoreLagNotice />
+      </div>
+    );
+  }
+
   if (view === "job_ready" && jd) {
     return (
       <div className="popup">
@@ -1106,6 +1144,7 @@ export function Popup(): React.ReactElement {
         >
           Paste job description
         </button>
+        <ChromeStoreLagNotice />
       </div>
     );
   }
@@ -1183,6 +1222,7 @@ export function Popup(): React.ReactElement {
             </a>
           </p>
         )}
+        <ChromeStoreLagNotice />
       </div>
     );
   }
