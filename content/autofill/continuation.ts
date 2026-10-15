@@ -1,4 +1,4 @@
-import { detectApplicationForm } from "./detector.js";
+import { collectInputElements } from "./detector.js";
 
 export type StepChangeReason = "history" | "mutation";
 
@@ -23,11 +23,10 @@ const COMPLETION_PATTERNS = [
   /successfully submitted/i,
 ];
 
-const INPUT_SELECTOR = "input:not([type='hidden']), textarea, select";
-
 function formStructureSignature(root: ParentNode): string {
   const parts: string[] = [];
-  for (const el of Array.from(root.querySelectorAll(INPUT_SELECTOR))) {
+  // Same walk as the detector, so a step change inside a shadow root is seen.
+  for (const el of collectInputElements(root)) {
     const htmlEl = el as HTMLElement;
     parts.push(
       [
@@ -46,10 +45,11 @@ function pageHasCompletionCopy(root: ParentNode): boolean {
   return COMPLETION_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-export function isApplicationComplete(root: ParentNode, hostname = ""): boolean {
-  if (pageHasCompletionCopy(root)) return true;
-  const detection = detectApplicationForm(root, hostname);
-  return !detection.isApplicationForm;
+export function isApplicationComplete(root: ParentNode, _hostname = ""): boolean {
+  // Only explicit completion copy means done. Treating a detection miss as
+  // completion made every unrecognised step (all of Workday) hide the overlay
+  // and clear the active session on each mutation.
+  return pageHasCompletionCopy(root);
 }
 
 export function observeApplicationSteps(options: ApplicationContinuationOptions): () => void {

@@ -1,3 +1,4 @@
+import { forEachElementIncludingShadow } from "../../src/shadowDomWalk.js";
 import selectorsConfig from "./selectors.json";
 
 /** Minimum confidence before the overlay should offer autofill. */
@@ -19,7 +20,14 @@ export type FieldConcept =
   | "cover_letter"
   | "linkedin_url"
   | "work_authorization"
-  | "eeo";
+  | "eeo"
+  | "address_line1"
+  | "city"
+  | "state"
+  | "postal_code"
+  | "country"
+  | "source_of_hire"
+  | "prior_employment";
 
 export interface FieldCandidate {
   concept: FieldConcept;
@@ -62,7 +70,56 @@ const FIELD_CONCEPT_SIGNALS: Record<FieldConcept, readonly string[]> = {
     "equal employment",
     "demographic",
   ],
+  address_line1: ["address", "address line 1", "street address", "addressline1"],
+  city: ["city", "town"],
+  state: ["state", "province", "state province", "region"],
+  postal_code: ["postal code", "zip", "zip code", "postcode", "postalcode"],
+  country: ["country", "country territory"],
+  source_of_hire: ["how did you hear about us", "source", "referral source", "how did you hear"],
+  prior_employment: ["previously worked", "former employee", "currently working for"],
 };
+
+/**
+ * Per-concept contribution to the detection score.
+ *
+ * The address/geo/referral concepts are deliberately weak: they are common on
+ * generic "Contact us" forms, so on an unrecognised host they must not be able
+ * to push a page over the threshold on their own. On a known ATS host the
+ * `isKnownAtsSurface` predicate carries the decision instead.
+ */
+const WEAK_CONCEPT_WEIGHT = 0.04;
+const DEFAULT_CONCEPT_WEIGHT = 0.12;
+/**
+ * Combined ceiling for weak concepts, deliberately below one strong concept.
+ * Without it, a "Contact us" form carrying address + city + state + zip +
+ * country stacks five weak matches and crosses the threshold on its own.
+ */
+const WEAK_CONCEPT_TOTAL_CAP = 0.06;
+const WEAK_CONCEPTS: ReadonlySet<FieldConcept> = new Set<FieldConcept>([
+  "address_line1",
+  "city",
+  "state",
+  "postal_code",
+  "country",
+  "source_of_hire",
+  "prior_employment",
+]);
+
+/** Known-ATS pages need more than a search box and a filter to count as a form. */
+const KNOWN_ATS_MIN_INPUTS = 4;
+/**
+ * A known-ATS page must also look like it collects personal details, or the
+ * predicate would fire on login pages, job-search filter bars and candidate
+ * dashboards — all of which live on the same hosts and carry
+ * `data-automation-id`. Requiring one identity field plus breadth keeps a
+ * two-field login (email + password) out.
+ */
+const KNOWN_ATS_MIN_CONCEPTS = 3;
+const STRONG_IDENTITY_CONCEPTS: ReadonlySet<FieldConcept> = new Set<FieldConcept>([
+  "name",
+  "email",
+  "phone",
+]);
 
 const INPUT_SELECTOR = "input:not([type='hidden']), textarea, select";
 
@@ -90,6 +147,7 @@ function hostMatchesPattern(hostname: string, pattern: string): boolean {
 }
 
 export function detectPlatformFromHost(hostname: string): Platform {
+  const host = hostname.toLowerCase();
   const config = selectorsConfig as SelectorsFile;
   if (config.greenhouse.host_patterns.some((p) => hostMatchesPattern(hostname, p))) {
     return "greenhouse";
@@ -97,44 +155,101 @@ export function detectPlatformFromHost(hostname: string): Platform {
   if (config.linkedin.host_patterns.some((p) => hostMatchesPattern(hostname, p))) {
     return "linkedin";
   }
+  if (host === "myworkdayjobs.com" || host.endsWith(".myworkdayjobs.com")) {
+    return "workday";
+  }
+  if (host === "myworkday.com" || host.endsWith(".myworkday.com")) {
+    return "workday";
+  }
   return "unknown";
 }
 
-function collectSignalText(el: Element): string {
-  const parts: string[] = [];
+function elementMatchesInputSelector(el: Element): boolean {
+  try {
+    return el.matches(INPUT_SELECTOR);
+  } catch {
+    return false;
+  }
+}
+
+export function collectInputElements(root: ParentNode): Element[] {
+  const inputs: Element[] = [];
+  if (root instanceof Document) {
+    forEachElementIncludingShadow(root, (el) => {
+      if (elementMatchesInputSelector(el)) inputs.push(el);
+    });
+    return inputs;
+  }
+  if (root instanceof Element) {
+    forEachElementIncludingShadow(root, (el) => {
+      if (elementMatchesInputSelector(el)) inputs.push(el);
+    });
+    return inputs;
+  }
+  return Array.from(root.querySelectorAll(INPUT_SELECTOR));
+}
+
+function countInputElements(root: ParentNode): number {
+  return collectInputElements(root).length;
+}
+
+interface FieldSignal {
+  /** Human-visible text: label, aria-label, placeholder. */
+  label: string;
+  /** Internal identifiers: id, name, autocomplete, data-automation-id. */
+  attrs: string;
+}
+
+function collectSignalText(el: Element): FieldSignal {
+  const labelParts: string[] = [];
+  const attrParts: string[] = [];
   const htmlEl = el as HTMLElement;
 
-  if (htmlEl.id) parts.push(htmlEl.id);
-  if (htmlEl.getAttribute("name")) parts.push(htmlEl.getAttribute("name") ?? "");
-  if (htmlEl.getAttribute("placeholder")) parts.push(htmlEl.getAttribute("placeholder") ?? "");
-  if (htmlEl.getAttribute("aria-label")) parts.push(htmlEl.getAttribute("aria-label") ?? "");
-  if (htmlEl.getAttribute("autocomplete")) parts.push(htmlEl.getAttribute("autocomplete") ?? "");
+  if (htmlEl.id) attrParts.push(htmlEl.id);
+  if (htmlEl.getAttribute("name")) attrParts.push(htmlEl.getAttribute("name") ?? "");
+  if (htmlEl.getAttribute("autocomplete")) attrParts.push(htmlEl.getAttribute("autocomplete") ?? "");
+  // Workday identifies its controls with data-automation-id, not name/id.
+  if (htmlEl.getAttribute("data-automation-id")) {
+    attrParts.push(htmlEl.getAttribute("data-automation-id") ?? "");
+  }
+
+  if (htmlEl.getAttribute("placeholder")) labelParts.push(htmlEl.getAttribute("placeholder") ?? "");
+  if (htmlEl.getAttribute("aria-label")) labelParts.push(htmlEl.getAttribute("aria-label") ?? "");
+
+  // Look labels up in the element's own tree. `ownerDocument` does not pierce
+  // shadow boundaries, so for a shadowed Workday input every label[for] and
+  // aria-labelledby lookup silently missed.
+  const rootNode = htmlEl.getRootNode();
+  const labelScope: ParentNode =
+    rootNode instanceof ShadowRoot || rootNode instanceof Document
+      ? rootNode
+      : htmlEl.ownerDocument;
 
   const labelledBy = htmlEl.getAttribute("aria-labelledby");
   if (labelledBy) {
     for (const id of labelledBy.split(/\s+/)) {
-      const labelEl = htmlEl.ownerDocument.getElementById(id);
-      if (labelEl?.textContent) parts.push(labelEl.textContent);
+      const labelEl = labelScope.querySelector(`#${escapeCssIdent(id)}`);
+      if (labelEl?.textContent) labelParts.push(labelEl.textContent);
     }
   }
 
   const id = htmlEl.id;
   if (id) {
-    const forLabel = htmlEl.ownerDocument.querySelector(
-      `label[for="${escapeAttrValue(id)}"]`,
-    );
-    if (forLabel?.textContent) parts.push(forLabel.textContent);
+    const forLabel = labelScope.querySelector(`label[for="${escapeAttrValue(id)}"]`);
+    if (forLabel?.textContent) labelParts.push(forLabel.textContent);
   }
 
   const parentLabel = htmlEl.closest("label");
-  if (parentLabel?.textContent) parts.push(parentLabel.textContent);
+  if (parentLabel?.textContent) labelParts.push(parentLabel.textContent);
 
-  return normalizeSignal(parts.join(" "));
+  return {
+    label: normalizeSignal(labelParts.join(" ")),
+    attrs: normalizeSignal(attrParts.join(" ")),
+  };
 }
 
-function matchConcept(signal: string, inputType: string): FieldConcept | null {
-  if (inputType === "file") return "resume";
-
+function longestKeywordMatch(signal: string): FieldConcept | null {
+  if (!signal) return null;
   let best: { concept: FieldConcept; score: number } | null = null;
   for (const [concept, keywords] of Object.entries(FIELD_CONCEPT_SIGNALS) as Array<
     [FieldConcept, readonly string[]]
@@ -147,6 +262,14 @@ function matchConcept(signal: string, inputType: string): FieldConcept | null {
     }
   }
   return best?.concept ?? null;
+}
+
+function matchConcept(signal: FieldSignal, inputType: string): FieldConcept | null {
+  if (inputType === "file") return "resume";
+  // Visible label text wins over internal identifiers: Workday names its city
+  // input `addressSection_city`, which otherwise matches "address" and steals
+  // the street-address concept.
+  return longestKeywordMatch(signal.label) ?? longestKeywordMatch(signal.attrs);
 }
 
 function escapeCssIdent(value: string): string {
@@ -222,10 +345,40 @@ function scoreDetection(
   let score = 0;
   if (hasFormShell) score += 0.15;
   const uniqueConcepts = new Set(fieldCandidates.map((c) => c.concept));
-  score += Math.min(uniqueConcepts.size * 0.12, 0.72);
+  let strongScore = 0;
+  let weakScore = 0;
+  for (const concept of uniqueConcepts) {
+    if (WEAK_CONCEPTS.has(concept)) weakScore += WEAK_CONCEPT_WEIGHT;
+    else strongScore += DEFAULT_CONCEPT_WEIGHT;
+  }
+  score += Math.min(strongScore + Math.min(weakScore, WEAK_CONCEPT_TOTAL_CAP), 0.72);
   if (platform !== "unknown") score += 0.2;
   if (greenhouseNaming) score += 0.15;
   return Math.min(score, 1);
+}
+
+/**
+ * True when a recognised ATS host is showing something structurally like an
+ * application step.
+ *
+ * Needed because the concept scorer is built around identity fields, so a
+ * Workday "My Information" step — mostly address and geo selects — scored 0.47
+ * against a 0.55 threshold and never offered. Scoped to known hosts so generic
+ * forms elsewhere still have to earn the threshold.
+ */
+export function isKnownAtsSurface(
+  root: ParentNode,
+  hostname: string,
+  fieldCandidates: readonly FieldCandidate[],
+): boolean {
+  const platform = hostname ? detectPlatformFromHost(hostname) : "unknown";
+  if (platform === "unknown") return false;
+  if (countInputElements(root) < KNOWN_ATS_MIN_INPUTS) return false;
+  if (!root.querySelector("form") && !root.querySelector("[data-automation-id]")) return false;
+
+  const concepts = new Set(fieldCandidates.map((c) => c.concept));
+  if (concepts.size < KNOWN_ATS_MIN_CONCEPTS) return false;
+  return [...concepts].some((concept) => STRONG_IDENTITY_CONCEPTS.has(concept));
 }
 
 export function detectApplicationForm(root: ParentNode, hostname = ""): DetectionResult {
@@ -233,7 +386,7 @@ export function detectApplicationForm(root: ParentNode, hostname = ""): Detectio
   const fieldCandidates: FieldCandidate[] = [];
   const seenConcepts = new Set<FieldConcept>();
 
-  for (const el of Array.from(root.querySelectorAll(INPUT_SELECTOR))) {
+  for (const el of collectInputElements(root)) {
     const inputType = (el as HTMLInputElement).type?.toLowerCase() ?? "";
     const mapped = selectorMapMatch(el, platform);
     if (mapped && !seenConcepts.has(mapped.concept)) {
@@ -260,14 +413,14 @@ export function detectApplicationForm(root: ParentNode, hostname = ""): Detectio
     });
   }
 
-  const hasFormShell =
-    Boolean(root.querySelector("form")) ||
-    root.querySelectorAll(INPUT_SELECTOR).length >= 2;
+  const hasFormShell = Boolean(root.querySelector("form")) || countInputElements(root) >= 2;
   const greenhouseNaming = platform === "greenhouse" && hasGreenhouseApplicationNaming(root);
   const confidence = scoreDetection(fieldCandidates, platform, hasFormShell, greenhouseNaming);
 
   return {
-    isApplicationForm: confidence >= APPLICATION_FORM_CONFIDENCE_THRESHOLD,
+    isApplicationForm:
+      confidence >= APPLICATION_FORM_CONFIDENCE_THRESHOLD ||
+      isKnownAtsSurface(root, hostname, fieldCandidates),
     confidence,
     platform,
     fieldCandidates,

@@ -2,7 +2,7 @@
 export const CHROME_WEB_STORE_LIVE_VERSION = "0.1.35";
 
 /** Latest dev zip on flintapply.com/extension — keep in sync with manifest.json. */
-export const RECOMMENDED_DEV_BUILD_VERSION = "0.1.41";
+export const RECOMMENDED_DEV_BUILD_VERSION = "0.1.42";
 
 function parseSemverTriple(version: string): [number, number, number] | null {
   const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());

@@ -52,6 +52,64 @@ describe("application continuation", () => {
     stop();
   });
 
+  it("does not report completion merely because a page is not a detected form", () => {
+    // Regression guard: this used to return `!isApplicationForm`, so every
+    // unrecognised page looked like a finished application and the controller
+    // hid the overlay and dropped the active session on each mutation.
+    document.body.innerHTML = `<main><h1>Loading your application</h1><p>Please wait.</p></main>`;
+
+    const detection = detectApplicationForm(document.body, "boards.greenhouse.io");
+    expect(detection.isApplicationForm).toBe(false);
+    expect(isApplicationComplete(document.body, "boards.greenhouse.io")).toBe(false);
+  });
+
+  it("does not fire onApplicationComplete on an interstitial with no completion copy", async () => {
+    const onApplicationComplete = vi.fn();
+
+    const stop = observeApplicationSteps({
+      root: document.body,
+      hostname: "boards.greenhouse.io",
+      debounceMs: 50,
+      onStepChange: vi.fn(),
+      onApplicationComplete,
+    });
+
+    document.body.innerHTML = `<main><h1>Loading next step</h1></main>`;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(onApplicationComplete).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("notices a step change inside an open shadow root", async () => {
+    const onStepChange = vi.fn();
+    const host = document.createElement("div");
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<input id="s1" placeholder="First Name" />`;
+    document.body.appendChild(host);
+
+    const stop = observeApplicationSteps({
+      root: document.body,
+      hostname: "workday.wd5.myworkdayjobs.com",
+      debounceMs: 50,
+      onStepChange,
+    });
+
+    // Mutating the light DOM is what the observer sees; the signature must
+    // reflect the shadow contents so the change is recognised as a new step.
+    shadow.innerHTML = `
+      <input id="s2" placeholder="Address Line 1" />
+      <input id="s3" placeholder="City" />
+    `;
+    document.body.appendChild(document.createElement("span"));
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(onStepChange).toHaveBeenCalled();
+
+    stop();
+    host.remove();
+  });
+
   it("fires onApplicationComplete when confirmation copy appears", async () => {
     const onApplicationComplete = vi.fn();
 

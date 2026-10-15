@@ -43,6 +43,15 @@ From `smart-resume`, run `./scripts/sync-extension-staging-env.sh` to write
 
 Load `dist/` as an unpacked extension in `chrome://extensions/` (Developer mode on).
 
+### Version bump checklist
+
+When you bump `version` in `manifest.json` and `package.json`:
+
+1. Set `EXTENSION_RELEASE_VERSION` in `smart-resume/frontend/lib/extensionInstall.ts` to the same semver (powers [flintapply.com/extension](https://flintapply.com/extension)).
+2. Optionally set `NEXT_PUBLIC_CHROME_WEB_STORE_EXTENSION_VERSION` in prod deploy if the **live** Chrome Web Store build lags the repo (e.g. still 0.1.36 while beta is 0.1.40).
+3. Set `RECOMMENDED_DEV_BUILD_VERSION` in `src/chromeStoreLagNotice.ts` (drives the in-popup upgrade nudge).
+4. **Copy the new zip to `smart-resume/frontend/public/downloads/flintapply-extension-beta.zip` and set `NEXT_PUBLIC_EXTENSION_BETA_VERSION`.** The zip is baked into the frontend image, so skipping this serves a stale build under a new version label — the site advertised 0.1.41 while shipping 0.1.30 for twelve days.
+
 **Do not load `dist/` in Chrome after `npm run firefox:dev`** — that command patches
 `dist/manifest.json` for Firefox only. For Chrome, run `npm run build` first.
 

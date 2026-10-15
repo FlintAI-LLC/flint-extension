@@ -21,6 +21,10 @@ describe("autofillFlags", () => {
     expect(isAutofillHost("https://jobs.lever.co/acme/abc")).toBe(true);
     expect(isAutofillHost("https://jobs.ashbyhq.com/acme/abc")).toBe(true);
     expect(isAutofillHost("https://acme.myworkdayjobs.com/en-US/careers")).toBe(true);
+    // *.myworkday.com is the employee HRIS (payroll, personal info), not the
+    // external career site. It must never become an autofill surface.
+    expect(isAutofillHost("https://acme.wd5.myworkday.com/acme/d/inst/home")).toBe(false);
+    expect(isAutofillHost("https://myworkday.com/")).toBe(false);
     expect(isAutofillHost("https://careers-acme.icims.com/jobs/123")).toBe(true);
     expect(isAutofillHost("https://acme.ukg.net/careers")).toBe(true);
     expect(isAutofillHost("https://jobright.ai/jobs/123")).toBe(true);

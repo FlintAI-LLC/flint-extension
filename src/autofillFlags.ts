@@ -40,6 +40,8 @@ export function isAutofillHost(url: string | undefined): boolean {
     if (host === "greenhouse.io" || host.endsWith(".greenhouse.io")) return true;
     if (host === "lever.co" || host.endsWith(".lever.co")) return true;
     if (host === "ashbyhq.com" || host.endsWith(".ashbyhq.com")) return true;
+    // Only the external career-site domain. *.myworkday.com is the employee
+    // HRIS (payroll, personal info) and must not be an autofill surface.
     if (host === "myworkdayjobs.com" || host.endsWith(".myworkdayjobs.com")) return true;
     if (host === "icims.com" || host.endsWith(".icims.com")) return true;
     if (host === "ukg.net" || host.endsWith(".ukg.net")) return true;

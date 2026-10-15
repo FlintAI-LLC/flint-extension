@@ -1,7 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { fillForPayload } from "../../content/autofill/fill-router.js";
+import { decideStepChangeAction } from "../../content/autofill/controller.js";
 import { detectApplicationForm } from "../../content/autofill/detector.js";
 import type { AutofillPayload } from "../../content/autofill/types.js";
+
+describe("decideStepChangeAction", () => {
+  it("abandons the active session when the new step is not an application surface", () => {
+    // The security case: after one confirmed fill we hold a session, and an
+    // SPA navigation to a search/login/profile page must not write PII.
+    expect(decideStepChangeAction("jd-1", false)).toBe("abandon");
+  });
+
+  it("refills only when a session is active and the page is still a surface", () => {
+    expect(decideStepChangeAction("jd-1", true)).toBe("refill");
+  });
+
+  it("offers instead of refilling when no session is active", () => {
+    expect(decideStepChangeAction(null, true)).toBe("offer");
+    expect(decideStepChangeAction(null, false)).toBe("offer");
+  });
+
+  it("never refills without an active session", () => {
+    for (const surface of [true, false]) {
+      expect(decideStepChangeAction(null, surface)).not.toBe("refill");
+    }
+  });
+
+  it("drops the session on a real non-application page after a fill", () => {
+    // End-to-end on the decision boundary: a Workday-host page that detection
+    // rejects must produce `abandon`, not `refill`.
+    document.body.innerHTML = `<main><h1>Search jobs</h1><input name="q" /></main>`;
+    const detection = detectApplicationForm(document.body, "workday.wd5.myworkdayjobs.com");
+    expect(detection.isApplicationForm).toBe(false);
+    expect(decideStepChangeAction("jd-1", detection.isApplicationForm)).toBe("abandon");
+  });
+});
 
 describe("fillForPayload routing", () => {
   it("routes greenhouse payloads through the greenhouse selector map", () => {
