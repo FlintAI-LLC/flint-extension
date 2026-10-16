@@ -55,6 +55,10 @@ When you bump `version` in `manifest.json` and `package.json`:
 **Do not load `dist/` in Chrome after `npm run firefox:dev`** — that command patches
 `dist/manifest.json` for Firefox only. For Chrome, run `npm run build` first.
 
+`npm run pack:store` writes the Chrome Web Store submission zip to
+`store-releases/flint-apply-extension-v<version>.zip` (gitignored — upload it
+manually in the [CWS developer dashboard](https://chrome.google.com/webstore/devconsole)).
+
 ## Development
 
 ```bash

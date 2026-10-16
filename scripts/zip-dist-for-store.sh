@@ -3,7 +3,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="$(node -p "require('$ROOT/dist/manifest.json').version")"
-OUT="$ROOT/flint-apply-extension-v${VERSION}.zip"
+OUT_DIR="$ROOT/store-releases"
+mkdir -p "$OUT_DIR"
+OUT="$OUT_DIR/flint-apply-extension-v${VERSION}.zip"
 rm -f "$OUT"
 (cd "$ROOT/dist" && zip -r "$OUT" .)
 echo "Wrote $OUT"
