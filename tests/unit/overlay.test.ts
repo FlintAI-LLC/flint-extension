@@ -85,6 +85,39 @@ describe("AutofillOverlay", () => {
     expect(document.activeElement).toBe(emailInput);
   });
 
+  it("labels fill_rejected fields distinctly and still offers jump-to-field", () => {
+    const overlay = new AutofillOverlay(
+      {
+        onAutofillConfirm: vi.fn(),
+        onSessionPick: vi.fn(),
+        onDismiss: vi.fn(),
+      },
+      PAGE_URL,
+    );
+
+    const result: FillResult = {
+      percent_filled: 0,
+      fields: [
+        {
+          key: "email",
+          selector: "[name='job_application[email]']",
+          status: "fill_rejected",
+          value_preview: "alex@example.com",
+        },
+      ],
+    };
+
+    overlay.mount();
+    overlay.showResult(result);
+
+    expect(overlay["shadow"]!.textContent).toContain("Didn't save");
+    expect(overlay["shadow"]!.textContent).not.toContain("filled_rejected");
+    const jumpButton = Array.from(overlay["shadow"]!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Jump to field"),
+    );
+    expect(jumpButton).toBeDefined();
+  });
+
   it("shows picker state and forwards session selection", () => {
     const onSessionPick = vi.fn();
     const overlay = new AutofillOverlay(

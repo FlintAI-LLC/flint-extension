@@ -22,17 +22,25 @@ export function setTextControlValue(el: HTMLInputElement | HTMLTextAreaElement, 
   dispatchInputEvents(el);
 }
 
-export function setSelectByVisibleText(select: HTMLSelectElement, value: string): boolean {
+/**
+ * Returns the matched option's `value` attribute (which is frequently *not*
+ * the same string as the free-text input, e.g. `<option value="US">United
+ * States of America</option>`), or null if no option matched. Callers that
+ * need to verify the write stuck must compare against this returned value —
+ * not the original free-text — or every select whose option values differ
+ * from their visible text would be misreported as rejected.
+ */
+export function setSelectByVisibleText(select: HTMLSelectElement, value: string): string | null {
   const target = value.trim().toLowerCase();
   for (const option of Array.from(select.options)) {
     const text = option.textContent?.trim().toLowerCase() ?? "";
     if (text === target || option.value.toLowerCase() === target) {
       select.value = option.value;
       dispatchInputEvents(select);
-      return true;
+      return option.value;
     }
   }
-  return false;
+  return null;
 }
 
 export function querySelectorSafe(root: ParentNode, selector: string): Element | null {

@@ -1,7 +1,11 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { extensionInvalidatedMessage } from "../src/extensionContext.js";
-import { FLINT_JD_REFRESH_EVENT, FLINT_PANEL_REFRESH_JD } from "../src/panelMessages.js";
+import {
+  FLINT_FLOATING_COLLAPSE,
+  FLINT_JD_REFRESH_EVENT,
+  FLINT_PANEL_REFRESH_JD,
+} from "../src/panelMessages.js";
 import { Popup } from "./Popup.js";
 
 class PopupErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -29,7 +33,7 @@ class PopupErrorBoundary extends Component<{ children: ReactNode }, { error: Err
   }
 }
 
-const COLLAPSE_MESSAGE_TYPE = "FLINT_FLOATING_COLLAPSE";
+const COLLAPSE_MESSAGE_TYPE = FLINT_FLOATING_COLLAPSE;
 
 // When hosted in the floating drawer iframe, Escape never reaches the parent
 // document — bridge it so the shell can collapse to the logo.

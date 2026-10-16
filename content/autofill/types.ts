@@ -4,6 +4,7 @@ export type FieldFillStatus =
   | "filled_high_confidence"
   | "filled_needs_review"
   | "not_found"
+  | "fill_rejected"
   | "not_applicable_file_upload";
 
 export interface FieldFillOutcome {

@@ -40,24 +40,21 @@ const CONTACT_FORM = `
 </form>
 `;
 
-/** Workday "My Information", step 1 of 6 — the real shape users land on. */
+/**
+ * Workday "My Information", step 1 of 6 — the real shape users land on.
+ *
+ * Deliberately only carries ONE strong identity concept (first_name): with
+ * both first_name and last_name present the identity score alone clears the
+ * offer threshold (correctly — two distinct named fields are strong
+ * evidence), which would stop this fixture from exercising the
+ * known-ATS-surface fallback it is meant to test.
+ */
 const WORKDAY_MY_INFORMATION = `
 <form>
-  <label for="source">How Did You Hear About Us?</label>
-  <select id="source" name="source"><option>0 items selected</option></select>
-  <fieldset>
-    <legend>Have you previously worked for Workday as an employee or contractor?</legend>
-    <input type="radio" id="prev-yes" name="previouslyWorked" /><label for="prev-yes">Yes</label>
-    <input type="radio" id="prev-no" name="previouslyWorked" /><label for="prev-no">No</label>
-  </fieldset>
   <label for="country">Country / Territory</label>
   <select id="country" name="country"><option>United States of America</option></select>
   <label for="firstName">First Name</label>
   <input id="firstName" data-automation-id="legalNameSection_firstName" />
-  <label for="middleName">Middle Name</label>
-  <input id="middleName" data-automation-id="legalNameSection_middleName" />
-  <label for="lastName">Last Name</label>
-  <input id="lastName" data-automation-id="legalNameSection_lastName" />
   <label for="addressLine1">Address Line 1</label>
   <input id="addressLine1" data-automation-id="addressSection_addressLine1" />
   <label for="city">City</label>
@@ -98,7 +95,7 @@ describe("detectApplicationForm", () => {
     expect(result.confidence).toBeGreaterThanOrEqual(APPLICATION_FORM_CONFIDENCE_THRESHOLD);
     expect(result.isApplicationForm).toBe(true);
     expect(result.fieldCandidates.map((c) => c.concept)).toEqual(
-      expect.arrayContaining(["name", "email", "phone", "resume"]),
+      expect.arrayContaining(["first_name", "last_name", "email", "phone", "resume"]),
     );
   });
 
@@ -128,7 +125,7 @@ describe("detectApplicationForm", () => {
     expect(result.platform).toBe("workday");
     expect(result.isApplicationForm).toBe(true);
     expect(result.fieldCandidates.map((c) => c.concept)).toEqual(
-      expect.arrayContaining(["name", "email", "phone"]),
+      expect.arrayContaining(["first_name", "last_name", "email", "phone"]),
     );
 
     host.remove();
@@ -155,7 +152,35 @@ describe("detectApplicationForm", () => {
     expect(result.confidence).toBeLessThan(APPLICATION_FORM_CONFIDENCE_THRESHOLD);
     expect(result.isApplicationForm).toBe(true);
     expect(result.fieldCandidates.map((c) => c.concept)).toEqual(
-      expect.arrayContaining(["name", "city", "state", "postal_code", "country"]),
+      expect.arrayContaining(["first_name", "city", "state", "postal_code", "country"]),
+    );
+  });
+
+  it("clears the offer threshold on the score alone when both first and last name are present", () => {
+    // With split first_name/last_name concepts, a step with BOTH distinct
+    // name fields (the common real-world Workday "My Information" shape) is
+    // strong enough identity evidence to clear the threshold without needing
+    // the known-ATS-surface fallback — a step up from the pre-split behavior,
+    // where first/last name collapsed into a single "name" concept.
+    const doc = loadHtml(`
+      <form>
+        <label for="firstName">First Name</label>
+        <input id="firstName" data-automation-id="legalNameSection_firstName" />
+        <label for="lastName">Last Name</label>
+        <input id="lastName" data-automation-id="legalNameSection_lastName" />
+        <label for="addressLine1">Address Line 1</label>
+        <input id="addressLine1" data-automation-id="addressSection_addressLine1" />
+        <label for="city">City</label>
+        <input id="city" data-automation-id="addressSection_city" />
+      </form>
+    `);
+    const result = detectApplicationForm(doc.body, "workday.wd5.myworkdayjobs.com");
+
+    expect(result.platform).toBe("workday");
+    expect(result.confidence).toBeGreaterThanOrEqual(APPLICATION_FORM_CONFIDENCE_THRESHOLD);
+    expect(result.isApplicationForm).toBe(true);
+    expect(result.fieldCandidates.map((c) => c.concept)).toEqual(
+      expect.arrayContaining(["first_name", "last_name"]),
     );
   });
 

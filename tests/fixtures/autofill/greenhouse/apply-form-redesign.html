@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!--
+  Minimal reproduction of the redesigned job-boards.greenhouse.io apply form
+  (verified live against a real posting on 2026-10-15). Unlike the legacy
+  `apply-form.html` fixture, this form has NO `name="job_application[...]"`
+  attributes at all — fields are identified only by `id` + `aria-label`, and
+  the LinkedIn/Portfolio fields are dynamically-numbered custom questions.
+  This is what the heuristic (non-selector-map) resolution path must handle.
+-->
+<html lang="en">
+  <head>
+    <title>Apply — Example Co</title>
+  </head>
+  <body>
+    <main>
+      <form>
+        <fieldset>
+          <input id="first_name" type="text" aria-label="First Name" />
+          <input id="last_name" type="text" aria-label="Last Name" />
+          <input id="email" type="text" aria-label="Email" />
+          <input id="country" type="text" />
+          <input id="phone" type="tel" aria-label="Phone" />
+          <input id="candidate-location" type="text" />
+        </fieldset>
+        <fieldset>
+          <input id="resume" type="file" />
+          <input id="cover_letter" type="file" />
+        </fieldset>
+        <fieldset>
+          <input id="question_38765485002" type="text" aria-label="LinkedIn Profile" />
+          <input id="question_38765486002" type="text" aria-label="Portfolio Website" />
+          <input id="question_38765487002" type="text" aria-label="GitHub Profile" />
+        </fieldset>
+      </form>
+    </main>
+  </body>
+</html>
